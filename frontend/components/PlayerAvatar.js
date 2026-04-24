@@ -1,30 +1,38 @@
 export default function PlayerAvatar({ player }) {
+  const statusColor = player.connected === false ? 'bg-slate-500' : 'bg-accent-emerald';
+  const statusRing = player.connected === false ? 'ring-slate-500/30' : 'ring-accent-emerald/30';
+
   return (
-    <div className="group relative">
-      <div className="w-20 h-20 bg-gradient-to-br from-purple-500/90 to-pink-500/90 rounded-2xl shadow-xl border-4 border-white/25 hover:border-white/50 transition-all duration-300 transform hover:scale-110 hover:rotate-3 group-hover:shadow-2xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-2xl" />
-        <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white shadow-lg ${
-          player.connected === false ? 'bg-gray-400' : 'bg-green-400'
-        }`} />
+    <div className="relative group">
+      <div className={`aspect-square rounded-xl bg-base-800 border border-white/[0.06] flex items-center justify-center transition-all duration-200 group-hover:border-white/[0.12] group-hover:scale-[1.03] ${statusRing} ring-1`}>
+        {/* Avatar circle with initial */}
+        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center text-lg sm:text-xl font-bold">
+          {player.username.charAt(0).toUpperCase()}
+        </div>
+
+        {/* Connection status dot */}
+        <div className={`absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full border-2 border-base-800 ${statusColor}`} />
+
+        {/* Host badge */}
         {player.isHost && (
-          <div className="absolute -top-3 -left-3 text-[10px] font-black bg-yellow-300 text-black px-2 py-1 rounded-full shadow-lg">
+          <div className="absolute -top-1.5 -left-1.5 text-[9px] font-bold bg-primary text-white px-1.5 py-0.5 rounded-md">
             HOST
           </div>
         )}
+
+        {/* Actor badge */}
         {player.isActor && (
-          <div className="absolute -bottom-3 -right-3 text-[10px] font-black bg-emerald-300 text-black px-2 py-1 rounded-full shadow-lg">
+          <div className="absolute -bottom-1.5 -right-1.5 text-[9px] font-bold bg-accent-emerald text-white px-1.5 py-0.5 rounded-md">
             ACTOR
           </div>
         )}
-        <p className="absolute bottom-1 left-1/2 transform -translate-x-1/2 text-xs font-bold truncate max-w-[70px] px-1 bg-black/50 rounded-full">
-          {player.username}
-        </p>
-        {player.connected === false && (
-          <p className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] font-black bg-black/60 px-2 py-0.5 rounded-full">
-            OFFLINE
-          </p>
-        )}
       </div>
+
+      {/* Username below */}
+      <p className="mt-1.5 text-[10px] sm:text-xs font-semibold text-center text-slate-400 truncate px-0.5">
+        {player.username}
+      </p>
     </div>
   );
 }
+

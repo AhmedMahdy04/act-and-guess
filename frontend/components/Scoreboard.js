@@ -7,57 +7,57 @@ export default function Scoreboard({ teams }) {
     .map(([teamId, team]) => [teamId, team.score || 0, team.name])
     .sort(([, scoreA], [, scoreB]) => scoreB - scoreA);
 
+  const teamColors = {
+    team1: 'bg-red-500',
+    team2: 'bg-blue-500',
+    team3: 'bg-amber-500',
+    team4: 'bg-emerald-500',
+    team5: 'bg-purple-500',
+    team6: 'bg-pink-500',
+  };
+
   return (
     <motion.div
-      className="bg-white/5 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/15"
-      initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      className="rounded-2xl border border-white/[0.06] bg-base-900/60 p-5 sm:p-6"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
     >
-      <div className="flex items-center justify-between gap-4 mb-5">
-        <h3 className="text-2xl sm:text-3xl font-black text-yellow-300">🏆 Leaderboard</h3>
-        <div className="hidden sm:flex items-center gap-2 opacity-80">
-          <span className="w-2 h-2 rounded-full bg-primary" />
-          <span className="text-sm font-bold">Live</span>
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <h3 className="text-lg font-bold text-slate-200">Leaderboard</h3>
+        <div className="hidden sm:flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse" />
+          <span className="text-xs font-medium text-slate-500">Live</span>
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         <AnimatePresence mode="popLayout">
           {sortedScores.map(([teamId, score, teamName], index) => {
-            const rankClass =
-              index === 0
-                ? 'bg-gradient-to-r from-yellow-400/25 to-orange-400/25 border-yellow-300/70 scale-[1.01]'
-                : index === 1
-                  ? 'bg-gradient-to-r from-gray-300/18 to-gray-400/18 border-gray-300/70'
-                  : index === 2
-                    ? 'bg-gradient-to-r from-[#CD7F32]/20 to-[#B8860B]/20 border-[#CD7F32]/80'
-                    : 'hover:bg-white/10 border-white/10';
-
-            const teamColor =
-              teamId === 'team1'
-                ? 'bg-red-500'
-                : teamId === 'team2'
-                  ? 'bg-blue-500'
-                  : teamId === 'team3'
-                    ? 'bg-yellow-500'
-                    : 'bg-green-500';
+            const rankStyles = [
+              'bg-amber-500/8 border-amber-500/15',
+              'bg-slate-400/5 border-slate-400/10',
+              'bg-orange-400/5 border-orange-400/10',
+              'border-white/[0.04] hover:bg-white/[0.02]',
+            ];
+            const rankClass = rankStyles[index] || rankStyles[3];
+            const teamColor = teamColors[teamId] || 'bg-slate-500';
 
             return (
               <motion.div
                 layout
                 key={teamId}
-                initial={{ opacity: 0, y: 6 }}
+                initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
+                exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.2 }}
-                className={`flex items-center justify-between p-4 rounded-2xl border ${rankClass} transition-colors`}
+                className={`flex items-center justify-between p-3 rounded-xl border ${rankClass} transition-colors`}
               >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-2xl ${teamColor}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm ${teamColor} text-white`}>
                     {index + 1}
                   </div>
-                  <span className="text-lg sm:text-xl font-black truncate">
+                  <span className="text-sm sm:text-base font-bold text-slate-200 truncate">
                     {String(teamName || teamId.replace('team', 'Team ')).toUpperCase()}
                   </span>
                 </div>
@@ -65,8 +65,8 @@ export default function Scoreboard({ teams }) {
                   key={`${teamId}-${score}`}
                   initial={{ scale: 0.9, opacity: 0.6 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-                  className="text-3xl font-black text-yellow-300 tabular-nums"
+                  transition={{ type: 'spring', stiffness: 280, damping: 18 }}
+                  className="text-2xl font-bold text-slate-100 tabular-nums"
                 >
                   {score}
                 </motion.span>
@@ -77,11 +77,12 @@ export default function Scoreboard({ teams }) {
       </div>
 
       {sortedScores.length === 0 && (
-        <div className="text-center py-12 opacity-70">
-          <p className="text-xl sm:text-2xl mb-2 font-black">No scores yet</p>
-          <p className="text-sm sm:text-base">First round coming soon!</p>
+        <div className="text-center py-8">
+          <p className="text-base font-bold text-slate-500 mb-1">No scores yet</p>
+          <p className="text-xs text-slate-600">First round coming soon!</p>
         </div>
       )}
     </motion.div>
   );
 }
+

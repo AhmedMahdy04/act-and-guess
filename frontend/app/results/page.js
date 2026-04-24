@@ -7,6 +7,7 @@ import Scoreboard from '../../components/Scoreboard';
 import { useRouter } from 'next/navigation';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import Logo from '../../components/Logo';
 
 export default function Results() {
   const [starting, setStarting] = useState(false);
@@ -16,50 +17,62 @@ export default function Results() {
 
   if (!winner) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-4 sm:p-8">
-        <Card className="p-8 sm:p-12 text-center">
-          <div className="text-7xl mb-4">🏆</div>
-          <h1 className="text-4xl font-black">Game Complete!</h1>
-          <p className="opacity-80 mt-2">Fetching final scoreboard.</p>
+      <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-8">
+        <Card className="p-8 sm:p-12 text-center max-w-md">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary text-3xl flex items-center justify-center mx-auto mb-5">
+            🏆
+          </div>
+          <h1 className="text-2xl font-bold text-slate-200 mb-2">Game Complete!</h1>
+          <p className="text-slate-500 text-sm">Fetching final scoreboard...</p>
         </Card>
       </main>
     );
   }
 
+  const winnerName = winner.replace('team', 'Team ');
+  const winnerTeam = game?.teams?.[winner];
+
   return (
-    <main className="min-h-screen p-4 sm:p-8 max-w-6xl mx-auto">
+    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-8 max-w-4xl mx-auto">
       <motion.div
-        initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
-        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="text-center mb-10 sm:mb-16"
+        className="text-center mb-10 sm:mb-12"
       >
-        <div className="text-7xl sm:text-8xl mb-4 animate-bounce">🎉</div>
-        <motion.h1
-          initial={{ scale: 0.95, opacity: 0.6 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-          className="text-4xl sm:text-6xl font-black bg-gradient-to-r from-yellow-300 via-pink-300 to-purple-300 bg-clip-text text-transparent"
-        >
-          {winner.replace('team', 'Team ').toUpperCase()} WINS!
-        </motion.h1>
-        <p className="text-base sm:text-2xl opacity-90 mt-3">
-          Congratulations to the champions!
-        </p>
+        <div className="inline-flex flex-col items-center">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+            className="text-6xl sm:text-7xl mb-4"
+          >
+            🎉
+          </motion.div>
+          <h1 className="text-3xl sm:text-5xl font-bold text-slate-100 mb-2">
+            {winnerName} Wins!
+          </h1>
+          {winnerTeam && (
+            <p className="text-slate-500 text-sm mb-6">
+              Final score: <span className="font-bold text-slate-300">{winnerTeam.score}</span> points
+            </p>
+          )}
+        </div>
       </motion.div>
 
       <Scoreboard teams={game?.teams || {}} />
 
-      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center mt-10 sm:mt-16">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mt-10 sm:mt-12">
         <Button
           variant="secondary"
           onClick={() => {
             resetGame({ cleanupRemote: isHost });
             router.push('/');
           }}
-          className="flex-1 justify-center py-7 px-10 text-2xl max-w-md mx-auto"
+          size="lg"
+          className="flex-1 justify-center max-w-xs mx-auto"
         >
-          🏠 New Game
+          New Game
         </Button>
         {isHost && (
           <>
@@ -76,9 +89,11 @@ export default function Results() {
                   setEditing(false);
                 }
               }}
-              className="flex-1 justify-center py-7 px-10 text-2xl max-w-md mx-auto"
+              disabled={editing}
+              size="lg"
+              className="flex-1 justify-center max-w-xs mx-auto"
             >
-              {editing ? 'Opening Lobby...' : '⚙️ Edit Next Session'}
+              {editing ? 'Opening...' : 'Edit Settings'}
             </Button>
             <Button
               onClick={async () => {
@@ -91,9 +106,11 @@ export default function Results() {
                   setStarting(false);
                 }
               }}
-              className="flex-1 justify-center py-7 px-10 text-2xl max-w-md mx-auto"
+              disabled={starting}
+              size="lg"
+              className="flex-1 justify-center max-w-xs mx-auto"
             >
-              {starting ? 'Starting...' : '🔄 Play Again'}
+              {starting ? 'Starting...' : 'Play Again'}
             </Button>
           </>
         )}
@@ -101,3 +118,4 @@ export default function Results() {
     </main>
   );
 }
+

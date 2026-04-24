@@ -16,27 +16,25 @@ export default function GuessInput({ guess, setGuess, onSubmit }) {
       <input
         value={safeGuess}
         onChange={(e) => setGuess(e.target.value)}
-        placeholder="Type your guess here..."
-        onKeyPress={(e) => e.key === 'Enter' && onSubmit()}
-        className="w-full p-7 sm:p-8 rounded-3xl bg-white/10 backdrop-blur-xl border-2 border-white/20 focus:border-primary focus:outline-none text-2xl sm:text-3xl font-black text-center text-white placeholder-white/40 transition-all shadow-xl hover:shadow-2xl"
+        placeholder="Type your guess..."
+        onKeyDown={(e) => e.key === 'Enter' && onSubmit()}
+        className="w-full p-5 sm:p-6 pr-28 sm:pr-32 rounded-xl bg-base-800 border border-white/[0.08] focus:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/20 text-xl sm:text-2xl font-bold text-center text-slate-100 placeholder-slate-600 transition-all"
       />
 
       <motion.button
         type="button"
         onClick={onSubmit}
         disabled={!canSubmit}
-        whileHover={canSubmit ? { scale: 1.03 } : {}}
+        whileHover={canSubmit ? { scale: 1.02 } : {}}
         whileTap={{ scale: 0.98 }}
-        className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white px-6 sm:px-8 py-3 sm:py-4 rounded-2xl font-black text-lg sm:text-xl shadow-xl hover:shadow-2xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 bg-primary hover:bg-indigo-500 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-base sm:text-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Guess
       </motion.button>
 
-      <div className="mt-3 flex justify-between items-center px-2 text-xs sm:text-sm opacity-80">
-        <span className="font-bold">No spelling. No talking.</span>
-        <span className="tabular-nums">
-          {safeGuess.length}/{24}
-        </span>
+      <div className="mt-2 flex justify-between items-center px-1 text-xs text-slate-500">
+        <span className="font-medium">No spelling. No talking.</span>
+        <span className="tabular-nums">{safeGuess.length}/24</span>
       </div>
     </motion.div>
   );

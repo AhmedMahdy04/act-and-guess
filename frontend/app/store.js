@@ -349,7 +349,7 @@ export const useGameStore = create((set, get) => ({
       });
     });
 
-    currentSocket.on('connect', async () => {
+    const attemptResume = async () => {
       const gameId = readStoredValue(GAME_ID_KEY);
       const playerId = readStoredValue(PLAYER_ID_KEY);
 
@@ -377,7 +377,15 @@ export const useGameStore = create((set, get) => ({
       } catch (error) {
         set({ lastError: error.message });
       }
-    });
+    };
+
+    // If already connected (e.g. page refresh), resume immediately
+    if (currentSocket.connected) {
+      attemptResume();
+    }
+
+    // Also handle future reconnections
+    currentSocket.on('connect', attemptResume);
   }
 }));
 

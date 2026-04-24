@@ -50,10 +50,7 @@ export default function Lobby() {
   }, [fetchWordCatalog]);
 
   useEffect(() => {
-    if (!game) {
-      return;
-    }
-
+    if (!game) return;
     setSettings({
       teamCount: game.teamCount,
       playersPerTeam: game.playersPerTeam,
@@ -66,10 +63,7 @@ export default function Lobby() {
   }, [game]);
 
   const joinLink = useMemo(() => {
-    if (!gameId || typeof window === 'undefined') {
-      return '';
-    }
-
+    if (!gameId || typeof window === 'undefined') return '';
     return `${window.location.origin}/join?id=${gameId}`;
   }, [gameId]);
 
@@ -95,10 +89,14 @@ export default function Lobby() {
 
   if (!game) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-4 sm:p-8">
-        <Card className="p-6 sm:p-10 text-center">
-          <h1 className="text-4xl font-black mb-3">No Active Game</h1>
-          <p className="opacity-80">Create a new game or join an existing one to open the lobby.</p>
+      <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-8">
+        <Card className="p-8 sm:p-12 text-center max-w-md">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary text-3xl flex items-center justify-center mx-auto mb-5">
+            🎭
+          </div>
+          <h1 className="text-2xl font-bold text-slate-200 mb-2">No Active Game</h1>
+          <p className="text-slate-500 text-sm mb-6">Create a new game or join an existing one to open the lobby.</p>
+          <Button onClick={() => window.location.href = '/create'}>Host a Game</Button>
         </Card>
       </main>
     );
@@ -107,7 +105,6 @@ export default function Lobby() {
   const handleStartGame = async () => {
     setStarting(true);
     clearError();
-
     try {
       await startGame(game.id);
     } catch (error) {
@@ -120,7 +117,6 @@ export default function Lobby() {
   const handleSaveSettings = async () => {
     setSavingSettings(true);
     clearError();
-
     try {
       await updateGameSettings(game.id, settings);
     } catch (error) {
@@ -133,7 +129,6 @@ export default function Lobby() {
   const handleAddWord = async () => {
     setAddingWord(true);
     clearError();
-
     try {
       await addWord({
         gameId: game.id,
@@ -150,96 +145,110 @@ export default function Lobby() {
   };
 
   return (
-    <main className="min-h-screen p-4 sm:p-8 max-w-7xl mx-auto">
+    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-8 max-w-7xl mx-auto">
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="text-center mb-10 sm:mb-12"
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+        className="mb-8 sm:mb-10"
       >
-        <h1 className="text-4xl sm:text-6xl font-black mb-3 bg-gradient-to-r from-purple-400 via-blue-400 to-pink-500 bg-clip-text text-transparent">
-          Game Lobby
-        </h1>
-        <p className="text-base sm:text-2xl opacity-90">
-          Game ID:{' '}
-          <code className="bg-black/20 px-4 py-2 rounded-full font-mono text-sm sm:text-lg">
-            {game.id || gameId}
-          </code>
-        </p>
+        <div className="text-center">
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-100 mb-2">Game Lobby</h1>
+          <div className="inline-flex items-center gap-3 bg-base-800 border border-white/[0.06] rounded-full px-5 py-2">
+            <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Room</span>
+            <code className="font-mono text-primary font-bold text-sm">{game.id || gameId}</code>
+            <button
+              onClick={() => navigator.clipboard.writeText(game.id || gameId)}
+              className="text-slate-500 hover:text-slate-300 transition-colors text-xs"
+              title="Copy code"
+            >
+              Copy
+            </button>
+          </div>
+        </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6 sm:gap-10 items-start">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5 sm:gap-6 items-start">
+        <div className="space-y-5">
           <TeamList teams={teams} players={players} maxPlayersPerTeam={game.playersPerTeam} />
           <Scoreboard teams={teams} />
         </div>
 
-        <div className="space-y-6">
-          <Card className="p-6 sm:p-8">
-            <h3 className="text-2xl sm:text-3xl font-black mb-5 text-center">Lobby Status</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm sm:text-base">
+        <div className="space-y-5">
+          {/* Status */}
+          <Card className="p-5 sm:p-6">
+            <h3 className="text-lg font-bold text-slate-200 mb-4">Lobby Status</h3>
+            <div className="grid grid-cols-3 gap-3 mb-5">
               <StatusPill label="Players" value={`${totalPlayers}/${totalSlots}`} />
-              <StatusPill label="Ready Teams" value={`${readyTeams}/${game.teamCount}`} />
-              <StatusPill label="Visibility" value={capitalize(game.visibility)} />
+              <StatusPill label="Ready" value={`${readyTeams}/${game.teamCount}`} />
               <StatusPill label="Round" value={`${game.roundTime}s`} />
-              <StatusPill label="Category" value={formatLabel(game.category)} />
-              <StatusPill label="Difficulty" value={capitalize(game.difficulty)} />
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-5">
+              <Tag label={capitalize(game.visibility)} />
+              <Tag label={formatLabel(game.category)} />
+              <Tag label={capitalize(game.difficulty)} />
             </div>
 
             {isHost && status === 'lobby' && (
               <Button
                 onClick={handleStartGame}
                 disabled={!canStart || starting}
-                className="mt-6 w-full justify-center py-5 px-6 text-2xl"
+                size="lg"
+                className="w-full justify-center"
               >
                 {starting
                   ? 'Starting...'
                   : canStart
-                    ? 'Start Session'
-                    : 'Need 2 Connected Players Per Team'}
+                    ? 'Start Game'
+                    : 'Need 2+ players per team'}
               </Button>
             )}
 
             {!isHost && (
-              <p className="mt-6 text-center opacity-80">
+              <p className="text-center text-slate-500 text-sm py-3">
                 Waiting for the host to start the game.
               </p>
             )}
           </Card>
 
-          <Card className="p-6 sm:p-8">
-            <h3 className="text-2xl sm:text-3xl font-black mb-5 text-center">Invite Players</h3>
-            <div className="flex flex-col gap-5 items-center">
+          {/* Invite */}
+          <Card className="p-5 sm:p-6">
+            <h3 className="text-lg font-bold text-slate-200 mb-4">Invite Players</h3>
+            <div className="flex flex-col gap-4 items-center">
               {joinLink && (
-                <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                  <QRCodeSVG value={joinLink} size={180} />
+                <div className="bg-white rounded-xl p-2.5 shadow-lg">
+                  <QRCodeSVG value={joinLink} size={160} />
                 </div>
               )}
               <input
                 value={joinLink}
                 readOnly
-                className="w-full bg-black/20 border border-white/15 p-4 rounded-2xl font-mono text-center text-sm"
+                className="w-full bg-base-800 border border-white/[0.06] rounded-xl px-4 py-3 font-mono text-xs text-center text-slate-400"
               />
               <Button
-                variant="ghost"
+                variant="secondary"
                 onClick={() => navigator.clipboard.writeText(joinLink)}
-                className="w-full justify-center py-3 px-6 font-black text-base"
+                size="sm"
+                className="w-full justify-center"
               >
                 Copy Join Link
               </Button>
             </div>
           </Card>
 
+          {/* Host Settings */}
           {isHost && (
-            <Card className="p-6 sm:p-8 space-y-5">
-              <h3 className="text-2xl sm:text-3xl font-black text-center">Host Controls</h3>
+            <Card className="p-5 sm:p-6 space-y-4">
+              <h3 className="text-lg font-bold text-slate-200">Next Session Settings</h3>
+              <p className="text-xs text-slate-500 -mt-3">Changes apply after returning to lobby</p>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <NumberField
                   label="Teams"
                   value={settings.teamCount}
-                  min="2"
-                  max="6"
+                  min={2}
+                  max={6}
                   onChange={(value) => setSettings((current) => ({
                     ...current,
                     teamCount: Math.min(6, Math.max(2, value || 2))
@@ -248,8 +257,8 @@ export default function Lobby() {
                 <NumberField
                   label="Players / Team"
                   value={settings.playersPerTeam}
-                  min="2"
-                  max="8"
+                  min={2}
+                  max={8}
                   onChange={(value) => setSettings((current) => ({
                     ...current,
                     playersPerTeam: Math.min(8, Math.max(2, value || 2))
@@ -258,8 +267,8 @@ export default function Lobby() {
                 <NumberField
                   label="Target Score"
                   value={settings.targetScore}
-                  min="1"
-                  max="50"
+                  min={1}
+                  max={50}
                   onChange={(value) => setSettings((current) => ({
                     ...current,
                     targetScore: Math.min(50, Math.max(1, value || 1))
@@ -268,8 +277,8 @@ export default function Lobby() {
                 <NumberField
                   label="Round Time"
                   value={settings.roundTime}
-                  min="1"
-                  max="60"
+                  min={1}
+                  max={60}
                   onChange={(value) => setSettings((current) => ({
                     ...current,
                     roundTime: Math.min(60, Math.max(1, value || 1))
@@ -277,7 +286,7 @@ export default function Lobby() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <SelectField
                   label="Visibility"
                   value={settings.visibility}
@@ -312,43 +321,42 @@ export default function Lobby() {
               <Button
                 onClick={handleSaveSettings}
                 disabled={savingSettings}
-                className="w-full justify-center py-4 text-lg"
+                variant="secondary"
+                className="w-full justify-center"
               >
-                {savingSettings ? 'Saving...' : 'Save Next Session Settings'}
+                {savingSettings ? 'Saving...' : 'Save Settings'}
               </Button>
             </Card>
           )}
 
+          {/* Word Studio */}
           {isHost && (
-            <Card className="p-6 sm:p-8 space-y-5">
-              <h3 className="text-2xl sm:text-3xl font-black text-center">Word Studio</h3>
+            <Card className="p-5 sm:p-6 space-y-4">
+              <h3 className="text-lg font-bold text-slate-200">Word Studio</h3>
 
-              <label className="flex flex-col gap-2">
-                <span className="font-bold opacity-90">New Word</span>
+              <FormField label="New Word">
                 <input
                   value={wordForm.word}
                   onChange={(event) => setWordForm((current) => ({ ...current, word: event.target.value }))}
-                  placeholder="Add a new word or phrase"
-                  className="bg-white/10 border border-white/20 rounded-2xl px-4 py-4 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Add a word or phrase"
+                  className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
-              </label>
+              </FormField>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="flex flex-col gap-2">
-                  <span className="font-bold opacity-90">Category</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField label="Category">
                   <input
                     list="word-categories"
                     value={wordForm.category}
                     onChange={(event) => setWordForm((current) => ({ ...current, category: event.target.value }))}
-                    className="bg-white/10 border border-white/20 rounded-2xl px-4 py-4 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                   <datalist id="word-categories">
                     {categoryOptions.filter((option) => option !== 'random').map((option) => (
                       <option key={option} value={option} />
                     ))}
                   </datalist>
-                </label>
-
+                </FormField>
                 <SelectField
                   label="Difficulty"
                   value={wordForm.difficulty}
@@ -361,49 +369,52 @@ export default function Lobby() {
                 />
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm opacity-85">
+              <div className="rounded-lg border border-white/[0.04] bg-base-800/40 px-4 py-3 text-xs text-slate-500">
                 {wordCatalog?.totalWords || 0} words in the live catalog across {Math.max(0, categoryOptions.length - 1)} categories.
               </div>
 
               <Button
                 onClick={handleAddWord}
                 disabled={addingWord || !wordForm.word.trim() || !wordForm.category.trim()}
-                className="w-full justify-center py-4 text-lg"
+                variant="secondary"
+                className="w-full justify-center"
               >
-                {addingWord ? 'Adding...' : 'Add Word To Live Catalog'}
+                {addingWord ? 'Adding...' : 'Add Word'}
               </Button>
             </Card>
           )}
 
+          {/* Moderation */}
           {isHost && (
-            <Card className="p-6 sm:p-8 space-y-4">
-              <h3 className="text-2xl sm:text-3xl font-black text-center">Moderation</h3>
+            <Card className="p-5 sm:p-6 space-y-3">
+              <h3 className="text-lg font-bold text-slate-200">Players</h3>
               {roster.map((player) => (
                 <div
                   key={player.id}
-                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center justify-between gap-4"
+                  className="rounded-xl border border-white/[0.04] bg-base-800/40 px-4 py-3 flex items-center justify-between gap-3"
                 >
-                  <div>
-                    <div className="font-black text-lg">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-200 text-sm truncate">
                       {player.username}
-                      {player.isHost ? ' (Host)' : ''}
+                      {player.isHost && <span className="ml-2 text-[10px] uppercase tracking-wider text-primary font-bold">Host</span>}
                     </div>
-                    <div className="text-sm opacity-70">
-                      {teams[player.teamId]?.name || player.teamId} • {player.connected === false ? 'Offline' : 'Online'}
+                    <div className="text-xs text-slate-500">
+                      {teams[player.teamId]?.name || player.teamId} · {player.connected === false ? <span className="text-amber-500">Offline</span> : <span className="text-accent-emerald">Online</span>}
                     </div>
                   </div>
                   {!player.isHost && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 shrink-0">
                       <Button
-                        variant="secondary"
+                        variant="ghost"
                         onClick={() => kickPlayer(game.id, player.id, false).catch(() => {})}
-                        className="px-4 py-2 text-sm"
+                        size="sm"
                       >
                         Kick
                       </Button>
                       <Button
+                        variant="danger"
                         onClick={() => kickPlayer(game.id, player.id, true).catch(() => {})}
-                        className="px-4 py-2 text-sm"
+                        size="sm"
                       >
                         Ban
                       </Button>
@@ -415,7 +426,7 @@ export default function Lobby() {
           )}
 
           {lastError && (
-            <div className="text-center text-red-200 bg-red-500/20 border border-red-300/30 rounded-2xl px-4 py-3">
+            <div className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
               {lastError}
             </div>
           )}
@@ -425,23 +436,22 @@ export default function Lobby() {
   );
 }
 
-function StatusPill({ label, value }) {
+function FormField({ label, children }) {
   return (
-    <div className="rounded-2xl bg-white/5 border border-white/10 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-[0.18em] opacity-60">{label}</div>
-      <div className="mt-1 font-black">{value}</div>
-    </div>
+    <label className="flex flex-col gap-1.5">
+      <span className="text-sm font-semibold text-slate-400">{label}</span>
+      {children}
+    </label>
   );
 }
 
 function SelectField({ label, value, onChange, options }) {
   return (
-    <label className="flex flex-col gap-2">
-      <span className="font-bold opacity-90">{label}</span>
+    <FormField label={label}>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="bg-white/10 border border-white/20 rounded-2xl px-4 py-4 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary/50"
+        className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -449,23 +459,39 @@ function SelectField({ label, value, onChange, options }) {
           </option>
         ))}
       </select>
-    </label>
+    </FormField>
   );
 }
 
 function NumberField({ label, value, onChange, min, max }) {
   return (
-    <label className="flex flex-col gap-2">
-      <span className="font-bold opacity-90">{label}</span>
+    <FormField label={label}>
       <input
         type="number"
         value={value}
         onChange={(event) => onChange(Number.parseInt(event.target.value, 10))}
         min={min}
         max={max}
-        className="bg-white/10 border border-white/20 rounded-2xl px-4 py-4 text-xl font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+        className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-lg font-bold text-center text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
       />
-    </label>
+    </FormField>
+  );
+}
+
+function StatusPill({ label, value }) {
+  return (
+    <div className="rounded-xl bg-base-800/60 border border-white/[0.04] px-3 py-2.5 text-center">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
+      <div className="mt-0.5 text-sm font-bold text-slate-200">{value}</div>
+    </div>
+  );
+}
+
+function Tag({ label }) {
+  return (
+    <span className="inline-flex px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/[0.06] text-xs font-medium text-slate-400">
+      {label}
+    </span>
   );
 }
 
@@ -475,13 +501,11 @@ function capitalize(value) {
 }
 
 function formatLabel(value) {
-  if (value === 'random') {
-    return 'Random';
-  }
-
+  if (value === 'random') return 'Random';
   return String(value || '')
     .split('_')
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
+

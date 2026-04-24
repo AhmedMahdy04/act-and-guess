@@ -8,6 +8,7 @@ import { useGameStore } from '../store';
 
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import Logo from '../../components/Logo';
 
 export default function CreateGame() {
   const [config, setConfig] = useState({
@@ -56,14 +57,12 @@ export default function CreateGame() {
     if (!canShowInvite || typeof window === 'undefined') {
       return '';
     }
-
     return `${window.location.origin}/join?id=${gameId}`;
   }, [canShowInvite, gameId]);
 
   const handleCreate = async () => {
     setLoading(true);
     clearError();
-
     try {
       await createGame(config, hostName, hostTeamId);
     } catch (error) {
@@ -74,85 +73,90 @@ export default function CreateGame() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4 sm:p-8">
+    <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-8">
       <motion.div
-        initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
-        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="w-full max-w-5xl"
+        className="w-full max-w-4xl"
       >
-        <Card className="p-6 sm:p-10 w-full">
-          <h1 className="text-4xl sm:text-5xl font-black mb-10 text-center bg-gradient-to-r from-purple-400 via-blue-400 to-pink-500 bg-clip-text text-transparent">
-            Create Your Game
-          </h1>
+        <div className="text-center mb-8">
+          <Logo size="lg" className="justify-center mb-3" />
+          <p className="text-slate-500 text-sm">Configure your game and launch the lobby.</p>
+        </div>
 
+        <Card className="p-6 sm:p-10">
           {canShowInvite ? (
-            <div className="space-y-8">
-              <div className="bg-gradient-to-br from-emerald-500/70 to-green-600/70 p-7 rounded-3xl border border-white/10">
-                <h2 className="text-3xl font-black mb-2">Game Created!</h2>
-                <p className="text-base sm:text-xl mb-3 opacity-95">
-                  Game ID:{' '}
-                  <code className="bg-black/20 px-3 py-1 rounded-full font-mono text-white">
-                    {gameId}
-                  </code>
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-8"
+            >
+              <div className="rounded-2xl border border-accent-emerald/20 bg-accent-emerald/5 p-6 sm:p-8 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-accent-emerald/10 text-accent-emerald flex items-center justify-center text-3xl mx-auto mb-4">
+                  ✓
+                </div>
+                <h2 className="text-2xl font-bold text-slate-100 mb-2">Game Created!</h2>
+                <p className="text-slate-400 text-sm mb-1">
+                  Room code: <span className="font-mono text-primary font-bold text-base">{gameId}</span>
                 </p>
-                <p className="text-lg opacity-90">
-                  You joined as <span className="font-bold">{username}</span> on{' '}
-                  {game.teams?.[teamId]?.name || 'your team'}.
+                <p className="text-slate-500 text-sm">
+                  You joined as <span className="font-semibold text-slate-300">{username}</span> on{' '}
+                  <span className="font-semibold text-slate-300">{game.teams?.[teamId]?.name || 'your team'}</span>
                 </p>
 
-                <div className="mt-7 flex flex-col md:flex-row gap-6 justify-center items-center">
-                  <div className="bg-white/10 border border-white/20 p-4 rounded-2xl">
-                    <QRCodeSVG value={joinLink || gameId} size={200} />
+                <div className="mt-6 flex flex-col sm:flex-row gap-6 justify-center items-center">
+                  <div className="bg-white rounded-xl p-3 shadow-lg">
+                    <QRCodeSVG value={joinLink || gameId} size={160} />
                   </div>
-                  <div className="flex flex-col gap-3 w-full max-w-md">
+                  <div className="flex flex-col gap-3 w-full max-w-sm">
                     <input
                       value={joinLink}
                       readOnly
-                      className="bg-black/25 p-4 rounded-2xl font-mono text-base sm:text-lg text-center border border-white/15"
+                      className="bg-base-800 border border-white/[0.06] rounded-xl px-4 py-3 font-mono text-sm text-center text-slate-300"
                     />
                     <Button
                       onClick={() => navigator.clipboard.writeText(joinLink)}
-                      className="w-full py-4 text-lg"
+                      size="lg"
+                      className="w-full justify-center"
                     >
                       Copy Join Link
                     </Button>
                     <Button
                       onClick={() => router.push('/lobby')}
                       variant="secondary"
-                      className="w-full py-4 text-lg"
+                      size="lg"
+                      className="w-full justify-center"
                     >
-                      Open Lobby Controls
+                      Open Lobby
                     </Button>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <StatCard label="Visibility" value={capitalize(config.visibility)} />
                 <StatCard label="Category" value={formatLabel(config.category)} />
                 <StatCard label="Difficulty" value={capitalize(config.difficulty)} />
                 <StatCard label="Round Time" value={`${config.roundTime}s`} />
               </div>
-            </div>
+            </motion.div>
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="flex flex-col space-y-2">
-                  <span className="font-bold opacity-90">Your Name</span>
+                <FormField label="Your Name">
                   <input
                     value={hostName}
                     onChange={(event) => setHostName(event.target.value)}
                     maxLength={24}
-                    className="bg-white/10 p-4 rounded-2xl text-xl font-bold border border-white/15 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/20"
                   />
-                </label>
-                <label className="flex flex-col space-y-2">
-                  <span className="font-bold opacity-90">Your Team</span>
+                </FormField>
+                <FormField label="Your Team">
                   <select
                     value={hostTeamId}
                     onChange={(event) => setHostTeamId(event.target.value)}
-                    className="bg-white/10 p-4 rounded-2xl text-xl font-bold border border-white/15 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/20"
                   >
                     {teamOptions.map((currentTeamId, index) => (
                       <option key={currentTeamId} value={currentTeamId}>
@@ -160,15 +164,15 @@ export default function CreateGame() {
                       </option>
                     ))}
                   </select>
-                </label>
+                </FormField>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <NumberField
                   label="Teams"
                   value={config.teamCount}
-                  min="2"
-                  max="6"
+                  min={2}
+                  max={6}
                   onChange={(value) => {
                     const safeTeamCount = Math.min(6, Math.max(2, value || 2));
                     setConfig((current) => ({ ...current, teamCount: safeTeamCount }));
@@ -181,21 +185,18 @@ export default function CreateGame() {
                 <NumberField
                   label="Players / Team"
                   value={config.playersPerTeam}
-                  min="2"
-                  max="8"
+                  min={2}
+                  max={8}
                   onChange={(value) => setConfig((current) => ({
                     ...current,
                     playersPerTeam: Math.min(8, Math.max(2, value || 2))
                   }))}
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <NumberField
                   label="Target Score"
                   value={config.targetScore}
-                  min="1"
-                  max="50"
+                  min={1}
+                  max={50}
                   onChange={(value) => setConfig((current) => ({
                     ...current,
                     targetScore: Math.min(50, Math.max(1, value || 1))
@@ -204,8 +205,8 @@ export default function CreateGame() {
                 <NumberField
                   label="Round Time (s)"
                   value={config.roundTime}
-                  min="1"
-                  max="60"
+                  min={1}
+                  max={60}
                   onChange={(value) => setConfig((current) => ({
                     ...current,
                     roundTime: Math.min(60, Math.max(1, value || 1))
@@ -245,31 +246,23 @@ export default function CreateGame() {
                 />
               </div>
 
-              <div className="rounded-3xl border border-white/15 bg-black/20 px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm sm:text-base">
-                <div>
-                  <div className="opacity-60 uppercase tracking-[0.16em] text-[11px]">Catalog</div>
-                  <div className="font-black">{wordCatalog?.totalWords || 0} words ready</div>
-                </div>
-                <div>
-                  <div className="opacity-60 uppercase tracking-[0.16em] text-[11px]">Categories</div>
-                  <div className="font-black">{Math.max(0, (categoryOptions?.length || 1) - 1)} live groups</div>
-                </div>
-                <div>
-                  <div className="opacity-60 uppercase tracking-[0.16em] text-[11px]">Word Studio</div>
-                  <div className="font-black">Add more words from the lobby</div>
-                </div>
+              <div className="rounded-xl border border-white/[0.05] bg-base-800/40 px-5 py-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                <CatalogStat label="Words Ready" value={`${wordCatalog?.totalWords || 0}`} />
+                <CatalogStat label="Categories" value={`${Math.max(0, (categoryOptions?.length || 1) - 1)}`} />
+                <CatalogStat label="Word Studio" value="Available in lobby" />
               </div>
 
               <Button
                 onClick={handleCreate}
                 disabled={loading || !hostName.trim()}
-                className="w-full justify-center py-8 px-8 text-3xl"
+                size="xl"
+                className="w-full justify-center"
               >
                 {loading ? 'Creating...' : 'Launch Lobby'}
               </Button>
 
               {lastError && (
-                <p className="text-center text-red-200 bg-red-500/20 border border-red-300/30 rounded-2xl px-4 py-3">
+                <p className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
                   {lastError}
                 </p>
               )}
@@ -281,14 +274,22 @@ export default function CreateGame() {
   );
 }
 
+function FormField({ label, children }) {
+  return (
+    <label className="flex flex-col gap-2">
+      <span className="text-sm font-semibold text-slate-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 function SelectField({ label, value, onChange, options }) {
   return (
-    <label className="flex flex-col space-y-2">
-      <span className="font-bold opacity-90">{label}</span>
+    <FormField label={label}>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="bg-white/10 p-4 rounded-2xl text-lg font-bold border border-white/15 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+        className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/20"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -296,31 +297,39 @@ function SelectField({ label, value, onChange, options }) {
           </option>
         ))}
       </select>
-    </label>
+    </FormField>
   );
 }
 
 function NumberField({ label, value, onChange, min, max }) {
   return (
-    <label className="flex flex-col space-y-2">
-      <span className="font-bold opacity-90">{label}</span>
+    <FormField label={label}>
       <input
         type="number"
         value={value}
         onChange={(event) => onChange(Number.parseInt(event.target.value, 10))}
         min={min}
         max={max}
-        className="bg-white/10 p-4 rounded-2xl text-2xl font-bold text-center border border-white/15 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+        className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-xl font-bold text-center text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/20"
       />
-    </label>
+    </FormField>
+  );
+}
+
+function CatalogStat({ label, value }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
+      <div className="font-bold text-slate-300">{value}</div>
+    </div>
   );
 }
 
 function StatCard({ label, value }) {
   return (
-    <div className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-xl p-6 shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
-      <div className="text-2xl sm:text-3xl font-black tracking-tight">{value}</div>
-      <div className="mt-2 text-sm sm:text-base font-bold opacity-90">{label}</div>
+    <div className="rounded-xl border border-white/[0.05] bg-base-800/50 p-4 text-center">
+      <div className="text-lg font-bold text-slate-200">{value}</div>
+      <div className="mt-1 text-xs font-medium text-slate-500">{label}</div>
     </div>
   );
 }
@@ -331,13 +340,11 @@ function capitalize(value) {
 }
 
 function formatLabel(value) {
-  if (value === 'random') {
-    return 'Random';
-  }
-
+  if (value === 'random') return 'Random';
   return String(value || '')
     .split('_')
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
+

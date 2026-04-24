@@ -6,37 +6,38 @@ export default function CurrentWord({ word }) {
   const safeWord = String(word || '');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <motion.div
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="flex items-center justify-center gap-3"
+        className="flex items-center justify-center gap-2"
       >
-        <span className="text-7xl">🎭</span>
-        <span className="text-xl sm:text-2xl font-black opacity-90">
-          You’re up
+        <span className="text-4xl">🎭</span>
+        <span className="text-lg font-bold text-slate-400">
+          You're up
         </span>
       </motion.div>
 
       <div className="relative">
-        <div className="bg-black/35 p-6 sm:p-10 rounded-3xl backdrop-blur-xl border border-white/20 shadow-2xl">
+        <div className="bg-base-950 border border-white/[0.08] rounded-2xl px-6 sm:px-10 py-8 sm:py-12">
           <motion.h2
             key={safeWord}
-            initial={{ scale: 0.92, opacity: 0.35, filter: 'blur(3px)' }}
-            animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-            transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-            className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black uppercase tracking-wider bg-gradient-to-r from-yellow-300 via-orange-400 to-red-400 bg-clip-text text-transparent drop-shadow-2xl"
+            initial={{ scale: 0.95, opacity: 0.4 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
+            className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-wider text-slate-100"
           >
             {safeWord.toUpperCase()}
           </motion.h2>
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-3 text-sm sm:text-xl font-bold opacity-90">
-          <span className="px-3 py-1 rounded-full border border-white/15 bg-white/5">
+        <div className="mt-3 flex items-center justify-center gap-2 text-sm font-semibold text-slate-500">
+          <span className="px-3 py-1 rounded-lg border border-white/[0.06] bg-white/[0.02]">
             Act it out
           </span>
-          <span>⏱️</span>
+          <span>·</span>
+          <span>No talking</span>
         </div>
       </div>
     </div>

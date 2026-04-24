@@ -4,27 +4,28 @@ import { motion } from 'framer-motion';
 
 export default function GameTimer({ timeLeft }) {
   const safeTimeLeft = Number(timeLeft) || 0;
-
   const isCritical = safeTimeLeft < 10;
   const isSoon = safeTimeLeft < 20;
 
-  const baseClass = isCritical
-    ? 'bg-red-500 border-red-300'
+  const colorClass = isCritical
+    ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
     : isSoon
-      ? 'bg-orange-500 border-orange-300'
-      : 'bg-emerald-500 border-emerald-300';
+      ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+      : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
 
   return (
     <motion.div
-      className={`p-5 sm:p-6 rounded-2xl text-3xl sm:text-4xl font-black text-center shadow-2xl border-4 ${baseClass}`}
+      className={`px-5 py-3 rounded-xl font-bold text-center border ${colorClass}`}
       initial={{ scale: 0.98, opacity: 0.6 }}
       animate={{
-        scale: isCritical ? 1.08 : isSoon ? 1.03 : 1,
+        scale: isCritical ? 1.04 : isSoon ? 1.02 : 1,
         opacity: 1,
       }}
-      transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+      transition={{ type: 'spring', stiffness: 280, damping: 20 }}
     >
-      <div className={isCritical ? 'animate-pulse' : ''}>{safeTimeLeft}s</div>
+      <div className={`text-2xl sm:text-3xl tabular-nums ${isCritical ? 'animate-pulse' : ''}`}>
+        {safeTimeLeft}s
+      </div>
     </motion.div>
   );
 }
