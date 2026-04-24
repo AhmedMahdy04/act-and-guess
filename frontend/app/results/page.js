@@ -12,7 +12,7 @@ import Logo from '../../components/Logo';
 export default function Results() {
   const [starting, setStarting] = useState(false);
   const [editing, setEditing] = useState(false);
-  const { game, winner, startGame, isHost, resetGame, returnToLobby } = useGameStore();
+  const { game, winner, startGame, isHost, resetGame, returnToLobby, leaveGame } = useGameStore();
   const router = useRouter();
 
   if (!winner) {
@@ -73,6 +73,16 @@ export default function Results() {
           className="flex-1 justify-center max-w-xs mx-auto"
         >
           New Game
+        </Button>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try { await leaveGame(game.id); } catch { window.location.href = '/'; }
+          }}
+          size="lg"
+          className="flex-1 justify-center max-w-xs mx-auto"
+        >
+          Leave Game
         </Button>
         {isHost && (
           <>

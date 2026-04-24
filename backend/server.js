@@ -7,6 +7,8 @@ require('dotenv').config();
 
 const { connectDB } = require('./db');
 const gameService = require('./services/gameService');
+const adminService = require('./services/adminService');
+const adminRoutes = require('./routes/admin');
 const DEFAULT_WORDS = require('./defaultWords').map((entry) => entry.word);
 
 const DISCONNECT_GRACE_MS = 20000;
@@ -25,6 +27,7 @@ const server = http.createServer(app);
   dbConnected = await connectDB();
   if (dbConnected) {
     await gameService.ensureCatalogSeeded();
+    await adminService.seedHeadAdmin();
   }
   console.log('MongoDB:', dbConnected ? 'Connected ✅' : 'Fallback ⚠️');
 })();
@@ -68,6 +71,8 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
+
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Act & Guess Game Backend', dbConnected });
@@ -672,7 +677,8 @@ function removePlayerCompletely(gameId, playerId, options = {}) {
   }
 
   if (playerId === game.hostId) {
-    const nextHostId = Object.keys(game.players)[0] || null;
+    const remainingIds = Object.keys(game.players).filter((id) => id !== playerId);
+    const nextHostId = remainingIds[0] || null;
     game.hostId = nextHostId;
     game.hostName = nextHostId ? game.players[nextHostId]?.username || 'Host' : 'Host';
 
@@ -881,6 +887,30 @@ function finalizeDisconnectedPlayer(gameId, playerId) {
   removePlayerCompletely(gameId, playerId, { reason: 'player_left' });
 }
 
+function autoTransferHostIfNeeded(game, departedPlayerId) {
+  if (game.hostId !== departedPlayerId) return;
+
+  const candidates = Object.values(game.players).filter((p) => p.id !== departedPlayerId);
+  const nextHost = candidates.find((p) => p.connected) || candidates[0] || null;
+
+  if (nextHost) {
+    const oldHost = game.players[departedPlayerId];
+    if (oldHost) oldHost.isHost = false;
+    game.hostId = nextHost.id;
+    game.hostName = nextHost.username;
+    nextHost.isHost = true;
+
+    if (dbConnected) {
+      gameService.transferHost(game.id, nextHost.id, nextHost.username).catch((err) => {
+        console.error('Auto-transfer host failed:', err.message);
+      });
+    }
+  } else {
+    game.hostId = null;
+    game.hostName = 'Host';
+  }
+}
+
 function handleDisconnect(socketId) {
   Object.values(games).forEach((game) => {
     const player = findPlayerBySocketId(game, socketId);
@@ -891,6 +921,8 @@ function handleDisconnect(socketId) {
     player.connected = false;
     player.socketId = null;
     player.disconnectedAt = Date.now();
+
+    autoTransferHostIfNeeded(game, player.id);
 
     clearDisconnectCleanup(game.id, player.id);
     const timerId = setTimeout(() => finalizeDisconnectedPlayer(game.id, player.id), DISCONNECT_GRACE_MS);
@@ -1095,33 +1127,147 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('addWord', async ({ gameId, word, category, difficulty }, callback) => {
+  socket.on('movePlayer', async ({ gameId, playerId, teamId }, callback) => {
     try {
-      const limitError = await consumeAction(socket, 'add-word', 2);
-      if (limitError) {
-        callback?.({ error: limitError });
+      const game = games[gameId];
+      if (!findHostRequester(game, socket.id)) {
+        callback?.({ error: 'Only the host can move players.' });
         return;
       }
 
-      const game = gameId ? games[gameId] : null;
-      if (gameId && !findHostRequester(game, socket.id)) {
-        callback?.({ error: 'Only the host can add words for this lobby.' });
+      if (!game.teams[teamId]) {
+        callback?.({ error: 'That team does not exist.' });
         return;
       }
 
-      const createdBy = game ? game.hostName || 'host' : 'host';
-      const addedWord = await gameService.addWord({ word, category, difficulty }, createdBy);
-      const catalog = await gameService.getCatalogSummary();
-      callback?.({
-        ok: true,
-        word: addedWord,
-        catalog: {
-          ...catalog,
-          categoryOptions: ['random', ...catalog.categories]
-        }
-      });
+      const player = game.players[playerId];
+      if (!player) {
+        callback?.({ error: 'Player not found.' });
+        return;
+      }
+
+      if (player.teamId === teamId) {
+        callback?.({ error: 'Player is already on that team.' });
+        return;
+      }
+
+      if (game.teams[teamId].players.length >= game.playersPerTeam) {
+        callback?.({ error: 'That team is full.' });
+        return;
+      }
+
+      // Remove from old team
+      removePlayerFromTeam(game.teams[player.teamId], playerId);
+      // Add to new team
+      game.teams[teamId].players.push(playerId);
+      player.teamId = teamId;
+
+      if (dbConnected) {
+        await gameService.movePlayerTeam(gameId, playerId, teamId);
+      }
+
+      persistRuntimeState(game);
+      emitGameState(gameId);
+      callback?.({ ok: true });
     } catch (err) {
-      console.error('Error adding word:', err);
+      console.error('Error moving player:', err);
+      callback?.({ error: err.message });
+    }
+  });
+
+  socket.on('transferHost', async ({ gameId, playerId }, callback) => {
+    try {
+      const game = games[gameId];
+      if (!findHostRequester(game, socket.id)) {
+        callback?.({ error: 'Only the host can transfer ownership.' });
+        return;
+      }
+
+      const target = game.players[playerId];
+      if (!target) {
+        callback?.({ error: 'Player not found.' });
+        return;
+      }
+
+      if (playerId === game.hostId) {
+        callback?.({ error: 'You are already the host.' });
+        return;
+      }
+
+      // Update old host
+      const oldHost = game.players[game.hostId];
+      if (oldHost) {
+        oldHost.isHost = false;
+      }
+
+      // Update new host
+      game.hostId = playerId;
+      game.hostName = target.username;
+      target.isHost = true;
+
+      if (dbConnected) {
+        await gameService.transferHost(gameId, playerId, target.username);
+      }
+
+      persistRuntimeState(game);
+      emitGameState(gameId);
+      callback?.({ ok: true });
+    } catch (err) {
+      console.error('Error transferring host:', err);
+      callback?.({ error: err.message });
+    }
+  });
+
+  socket.on('leaveGame', async ({ gameId }, callback) => {
+    try {
+      const game = games[gameId];
+      if (!game) {
+        callback?.({ error: 'Game not found.' });
+        return;
+      }
+
+      const player = findPlayerBySocketId(game, socket.id);
+      if (!player) {
+        callback?.({ error: 'You are not in this game.' });
+        return;
+      }
+
+      const playerId = player.id;
+      clearDisconnectCleanup(gameId, playerId);
+
+      player.connected = false;
+      player.socketId = null;
+      player.disconnectedAt = Date.now();
+
+      if (dbConnected) {
+        await gameService.softLeavePlayer(gameId, playerId);
+      }
+
+      // If host leaves, transfer to next player
+      if (playerId === game.hostId) {
+        const nextHostId = Object.keys(game.players).find((id) => (
+          id !== playerId && game.players[id]?.connected
+        )) || Object.keys(game.players).find((id) => id !== playerId) || null;
+
+        if (nextHostId) {
+          const nextHost = game.players[nextHostId];
+          game.hostId = nextHostId;
+          game.hostName = nextHost.username;
+          player.isHost = false;
+          nextHost.isHost = true;
+
+          if (dbConnected) {
+            await gameService.transferHost(gameId, nextHostId, nextHost.username);
+          }
+        }
+      }
+
+      socket.leave(gameId);
+      persistRuntimeState(game);
+      emitGameState(gameId);
+      callback?.({ ok: true });
+    } catch (err) {
+      console.error('Error leaving game:', err);
       callback?.({ error: err.message });
     }
   });

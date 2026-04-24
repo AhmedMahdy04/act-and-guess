@@ -12,7 +12,6 @@ import Button from '../../components/ui/Button';
 export default function Lobby() {
   const [starting, setStarting] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [addingWord, setAddingWord] = useState(false);
   const [settings, setSettings] = useState({
     teamCount: 2,
     playersPerTeam: 3,
@@ -21,11 +20,6 @@ export default function Lobby() {
     visibility: 'private',
     category: 'random',
     difficulty: 'mixed'
-  });
-  const [wordForm, setWordForm] = useState({
-    word: '',
-    category: 'food',
-    difficulty: 'medium'
   });
 
   const {
@@ -41,7 +35,9 @@ export default function Lobby() {
     fetchWordCatalog,
     wordCatalog,
     updateGameSettings,
-    addWord,
+    movePlayer,
+    transferHost,
+    leaveGame,
     kickPlayer
   } = useGameStore();
 
@@ -126,21 +122,14 @@ export default function Lobby() {
     }
   };
 
-  const handleAddWord = async () => {
-    setAddingWord(true);
+  const handleLeave = async () => {
+    if (!confirm('Leave this lobby and return to the home page?')) return;
     clearError();
     try {
-      await addWord({
-        gameId: game.id,
-        word: wordForm.word,
-        category: wordForm.category,
-        difficulty: wordForm.difficulty
-      });
-      setWordForm((current) => ({ ...current, word: '' }));
+      await leaveGame(game.id);
     } catch (error) {
       console.error(error);
-    } finally {
-      setAddingWord(false);
+      window.location.href = '/';
     }
   };
 
@@ -195,7 +184,7 @@ export default function Lobby() {
                 onClick={handleStartGame}
                 disabled={!canStart || starting}
                 size="lg"
-                className="w-full justify-center"
+                className="w-full justify-center mb-3"
               >
                 {starting
                   ? 'Starting...'
@@ -206,10 +195,19 @@ export default function Lobby() {
             )}
 
             {!isHost && (
-              <p className="text-center text-slate-500 text-sm py-3">
+              <p className="text-center text-slate-500 text-sm py-3 mb-3">
                 Waiting for the host to start the game.
               </p>
             )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLeave}
+              className="w-full justify-center"
+            >
+              Leave Lobby
+            </Button>
           </Card>
 
           {/* Invite */}
@@ -329,63 +327,74 @@ export default function Lobby() {
             </Card>
           )}
 
-          {/* Word Studio */}
+          {/* Player Management */}
           {isHost && (
-            <Card className="p-5 sm:p-6 space-y-4">
-              <h3 className="text-lg font-bold text-slate-200">Word Studio</h3>
+            <Card className="p-5 sm:p-6 space-y-3">
+              <h3 className="text-lg font-bold text-slate-200">Players</h3>
+              {roster.map((player) => (
+                <div
+                  key={player.id}
+                  className="rounded-xl border border-white/[0.04] bg-base-800/40 px-4 py-3 flex flex-col gap-2"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-200 text-sm truncate">
+                        {player.username}
+                        {player.isHost && <span className="ml-2 text-[10px] uppercase tracking-wider text-primary font-bold">Host</span>}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {teams[player.teamId]?.name || player.teamId} · {player.connected === false ? <span className="text-amber-500">Offline</span> : <span className="text-accent-emerald">Online</span>}
+                      </div>
+                    </div>
+                    {!player.isHost && (
+                      <div className="flex gap-2 shrink-0">
+                        <Button
+                          variant="ghost"
+                          onClick={() => kickPlayer(game.id, player.id, false).catch(() => {})}
+                          size="sm"
+                        >
+                          Kick
+                        </Button>
+                        <Button
+                          variant="danger"
+                          onClick={() => kickPlayer(game.id, player.id, true).catch(() => {})}
+                          size="sm"
+                        >
+                          Ban
+                        </Button>
+                      </div>
+                    )}
+                  </div>
 
-              <FormField label="New Word">
-                <input
-                  value={wordForm.word}
-                  onChange={(event) => setWordForm((current) => ({ ...current, word: event.target.value }))}
-                  placeholder="Add a word or phrase"
-                  className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </FormField>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FormField label="Category">
-                  <input
-                    list="word-categories"
-                    value={wordForm.category}
-                    onChange={(event) => setWordForm((current) => ({ ...current, category: event.target.value }))}
-                    className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                  <datalist id="word-categories">
-                    {categoryOptions.filter((option) => option !== 'random').map((option) => (
-                      <option key={option} value={option} />
-                    ))}
-                  </datalist>
-                </FormField>
-                <SelectField
-                  label="Difficulty"
-                  value={wordForm.difficulty}
-                  onChange={(value) => setWordForm((current) => ({ ...current, difficulty: value }))}
-                  options={[
-                    { value: 'easy', label: 'Easy' },
-                    { value: 'medium', label: 'Medium' },
-                    { value: 'hard', label: 'Hard' }
-                  ]}
-                />
-              </div>
-
-              <div className="rounded-lg border border-white/[0.04] bg-base-800/40 px-4 py-3 text-xs text-slate-500">
-                {wordCatalog?.totalWords || 0} words in the live catalog across {Math.max(0, categoryOptions.length - 1)} categories.
-              </div>
-
-              <Button
-                onClick={handleAddWord}
-                disabled={addingWord || !wordForm.word.trim() || !wordForm.category.trim()}
-                variant="secondary"
-                className="w-full justify-center"
-              >
-                {addingWord ? 'Adding...' : 'Add Word'}
-              </Button>
+                  {/* Host controls: move team + transfer host */}
+                  {isHost && !player.isHost && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <TeamMoveSelect
+                        player={player}
+                        teams={teams}
+                        game={game}
+                        onMove={(teamId) => movePlayer(game.id, player.id, teamId).catch(() => {})}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (confirm(`Make ${player.username} the new host?`)) {
+                            transferHost(game.id, player.id).catch(() => {});
+                          }
+                        }}
+                      >
+                        Make Host
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </Card>
           )}
 
-          {/* Moderation */}
-          {isHost && (
+          {/* Non-host: simple player list */}
+          {!isHost && (
             <Card className="p-5 sm:p-6 space-y-3">
               <h3 className="text-lg font-bold text-slate-200">Players</h3>
               {roster.map((player) => (
@@ -402,24 +411,6 @@ export default function Lobby() {
                       {teams[player.teamId]?.name || player.teamId} · {player.connected === false ? <span className="text-amber-500">Offline</span> : <span className="text-accent-emerald">Online</span>}
                     </div>
                   </div>
-                  {!player.isHost && (
-                    <div className="flex gap-2 shrink-0">
-                      <Button
-                        variant="ghost"
-                        onClick={() => kickPlayer(game.id, player.id, false).catch(() => {})}
-                        size="sm"
-                      >
-                        Kick
-                      </Button>
-                      <Button
-                        variant="danger"
-                        onClick={() => kickPlayer(game.id, player.id, true).catch(() => {})}
-                        size="sm"
-                      >
-                        Ban
-                      </Button>
-                    </div>
-                  )}
                 </div>
               ))}
             </Card>
@@ -433,6 +424,34 @@ export default function Lobby() {
         </div>
       </div>
     </main>
+  );
+}
+
+function TeamMoveSelect({ player, teams, game, onMove }) {
+  const [value, setValue] = useState('');
+  const available = Object.values(teams).filter(
+    (t) => t.id !== player.teamId && t.players.length < game.playersPerTeam
+  );
+
+  if (!available.length) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={value}
+        onChange={(e) => {
+          const teamId = e.target.value;
+          setValue('');
+          if (teamId) onMove(teamId);
+        }}
+        className="bg-base-800 border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none"
+      >
+        <option value="">Move to...</option>
+        {available.map((t) => (
+          <option key={t.id} value={t.id}>{t.name} ({t.players.length}/{game.playersPerTeam})</option>
+        ))}
+      </select>
+    </div>
   );
 }
 

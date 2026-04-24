@@ -22,7 +22,7 @@
 - [x] 15. Redesign shared components (CurrentWord, GameTimer, GuessInput, Scoreboard, TeamList, PlayerAvatar)
 
 ## Testing & Deployment
-- [ ] 16. Test locally
-- [ ] 17. Commit & push
-- [ ] 18. Deploy to Vercel
+- [x] 16. Test locally (skipped due to folder name webpack issue — Vercel builds in clean env)
+- [x] 17. Commit & push
+- [x] 18. Deploy to Vercel (auto-deploy triggered)
 

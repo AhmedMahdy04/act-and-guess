@@ -466,6 +466,54 @@ async function updateGameState(gameCodeValue, updates) {
   await Game.updateOne({ gameCode: gameCodeValue }, { $set: updates });
 }
 
+async function movePlayerTeam(gameCodeValue, playerId, newTeamId) {
+  const player = await Player.findOne({ gameId: gameCodeValue, playerId });
+  if (!player) {
+    throw new Error('Player not found.');
+  }
+
+  const oldTeamId = player.teamId;
+
+  await Promise.all([
+    Player.updateOne(
+      { gameId: gameCodeValue, playerId },
+      { $set: { teamId: newTeamId } }
+    ),
+    Team.updateOne(
+      { gameId: gameCodeValue, teamId: oldTeamId },
+      { $pull: { players: playerId } }
+    ),
+    Team.updateOne(
+      { gameId: gameCodeValue, teamId: newTeamId },
+      { $addToSet: { players: playerId } }
+    )
+  ]);
+}
+
+async function transferHost(gameCodeValue, newHostId, newHostName) {
+  await Promise.all([
+    Player.updateOne(
+      { gameId: gameCodeValue, playerId: newHostId },
+      { $set: { isHost: true } }
+    ),
+    Player.updateMany(
+      { gameId: gameCodeValue, isHost: true, playerId: { $ne: newHostId } },
+      { $set: { isHost: false } }
+    ),
+    Game.updateOne(
+      { gameCode: gameCodeValue },
+      { $set: { hostId: newHostId, hostName: newHostName } }
+    )
+  ]);
+}
+
+async function softLeavePlayer(gameCodeValue, playerId) {
+  await Player.updateOne(
+    { gameId: gameCodeValue, playerId },
+    { $set: { connected: false, socketId: null } }
+  );
+}
+
 function calculateScore(guess, answer) {
   const cleanGuess = String(guess || '').toLowerCase().trim();
   const cleanAnswer = String(answer || '').toLowerCase().trim();
@@ -515,14 +563,17 @@ module.exports = {
   getCatalogSummary,
   getGameByCode,
   listPublicGames,
+  movePlayerTeam,
   normalizeCategoryFilter,
   normalizeDifficulty,
   normalizeDifficultyFilter,
   removePlayer,
   removeTeam,
   resetTeamScores,
+  softLeavePlayer,
   startGame,
   submitGuess,
+  transferHost,
   updateGameState,
   updatePlayerSocket
 };

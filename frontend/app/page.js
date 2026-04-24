@@ -181,6 +181,16 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="py-6 border-t border-white/[0.04] text-center">
+        <button
+          onClick={() => router.push('/admin/login')}
+          className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          Admin Portal
+        </button>
+      </footer>
     </main>
   );
 }

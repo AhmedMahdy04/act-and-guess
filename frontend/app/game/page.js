@@ -8,12 +8,13 @@ import GuessInput from '../../components/GuessInput';
 import Scoreboard from '../../components/Scoreboard';
 import { useGameStore } from '../store';
 import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
 
 export default function Game() {
   const [guess, setGuess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [guessFeedback, setGuessFeedback] = useState(null);
-  const { game, status, submitGuess, lastError, clearError } = useGameStore();
+  const { game, status, submitGuess, lastError, clearError, leaveGame } = useGameStore();
 
   if (!game) {
     return (
@@ -33,6 +34,17 @@ export default function Game() {
   const isActor = game.isActor;
   const canGuess = game.canGuess;
   const isSpectator = status === 'playing' && !isActor && !canGuess;
+
+  const handleLeave = async () => {
+    if (!confirm('Leave this game and return to the home page?')) return;
+    clearError();
+    try {
+      await leaveGame(game.id);
+    } catch (error) {
+      console.error(error);
+      window.location.href = '/';
+    }
+  };
 
   const handleSubmit = async () => {
     if (!guess.trim()) return;
@@ -77,7 +89,10 @@ export default function Game() {
                 </div>
               )}
             </div>
-            <GameTimer timeLeft={game.timeLeft} />
+            <div className="flex items-center gap-3">
+              <GameTimer timeLeft={game.timeLeft} />
+              <Button variant="outline" size="sm" onClick={handleLeave}>Leave</Button>
+            </div>
           </div>
         </Card>
       </motion.div>

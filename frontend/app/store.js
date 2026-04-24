@@ -262,15 +262,45 @@ export const useGameStore = create((set, get) => ({
     }
   },
 
-  addWord: async (payload) => {
+  movePlayer: async (gameId, playerId, teamId) => {
     const { socket: currentSocket } = get();
     try {
-      const response = await emitWithAck(currentSocket, 'addWord', payload);
+      const response = await emitWithAck(currentSocket, 'movePlayer', { gameId, playerId, teamId });
       if (response?.error) {
         throw new Error(response.error);
       }
+      set({ lastError: null });
+      return response;
+    } catch (error) {
+      set({ lastError: error.message });
+      throw error;
+    }
+  },
 
-      set({ wordCatalog: response.catalog || get().wordCatalog, lastError: null });
+  transferHost: async (gameId, playerId) => {
+    const { socket: currentSocket } = get();
+    try {
+      const response = await emitWithAck(currentSocket, 'transferHost', { gameId, playerId });
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+      set({ lastError: null });
+      return response;
+    } catch (error) {
+      set({ lastError: error.message });
+      throw error;
+    }
+  },
+
+  leaveGame: async (gameId) => {
+    const { socket: currentSocket } = get();
+    try {
+      const response = await emitWithAck(currentSocket, 'leaveGame', { gameId });
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+      clearStoredSession();
+      set(emptyState());
       return response;
     } catch (error) {
       set({ lastError: error.message });
