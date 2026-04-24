@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App-wide base visuals + accessibility */
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  /* Dark party background */
+  background:
+    radial-gradient(1200px circle at 20% 10%, rgba(124, 58, 237, 0.35), transparent 55%),
+    radial-gradient(900px circle at 80% 30%, rgba(59, 130, 246, 0.35), transparent 50%),
+    radial-gradient(900px circle at 50% 90%, rgba(236, 72, 153, 0.18), transparent 55%),
+    linear-gradient(135deg, #060717 0%, #0a0b1e 100%);
+  background-attachment: fixed;
+  animation: partyBgShift 12s ease-in-out infinite;
+  min-height: 100vh;
+  color: white;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: translateZ(0);
+}
+
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.35);
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    opacity: 0.12;
+  }
+  body {
+    animation: none;
+  }
+}
+
+@keyframes partyBgShift {
+  0% {
+    background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%;
+  }
+  50% {
+    background-position: 20% 10%, 70% 20%, 50% 95%, 0% 0%;
+  }
+  100% {
+    background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%;
+  }
+}
