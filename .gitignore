@@ -35,5 +35,3 @@ Thumbs.db
 # Testing
 coverage/
 
-# Misc
-*.log

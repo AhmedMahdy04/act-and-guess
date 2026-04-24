@@ -5,6 +5,7 @@ import { io } from 'socket.io-client';
 
 const PLAYER_ID_KEY = 'guess_game_player_id';
 const GAME_ID_KEY = 'guess_game_game_id';
+// Backend URL for Socket.IO connection
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4001';
 
 const socket = io(BACKEND_URL, {
@@ -379,3 +380,4 @@ export const useGameStore = create((set, get) => ({
     });
   }
 }));
+
