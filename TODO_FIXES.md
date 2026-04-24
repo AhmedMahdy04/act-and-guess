@@ -1,28 +1,14 @@
-# Bug Fixes & Design Refresh — TODO
+# Admin Dashboard Fixes
 
-## Core Bug Fixes
-- [x] 1. Fix Safari iPhone flashing (globals.css)
-- [x] 2. Fix game refresh losing session (store.js)
-- [x] 3. Remove blur filters causing Safari issues (PageTransitions.js)
-
-## Design System Refresh
-- [x] 4. Update Tailwind config with refined colors
-- [x] 5. Redesign Card component
-- [x] 6. Redesign Button component
-- [x] 7. Create Logo component
-
-## Page Redesigns
-- [x] 8. Redesign layout.js (header with logo)
-- [x] 9. Redesign Home page
-- [x] 10. Redesign Lobby page
-- [x] 11. Redesign Game page
-- [x] 12. Redesign Results page
-- [x] 13. Redesign Create page
-- [x] 14. Redesign Join page
-- [x] 15. Redesign shared components (CurrentWord, GameTimer, GuessInput, Scoreboard, TeamList, PlayerAvatar)
-
-## Testing & Deployment
-- [x] 16. Test locally (skipped due to folder name webpack issue — Vercel builds in clean env)
-- [x] 17. Commit & push
-- [x] 18. Deploy to Vercel (auto-deploy triggered)
+- [x] 1. Read all relevant files
+- [ ] 2. Remove `difficulty` from Category schema
+- [ ] 3. Seed categories in `wordService.ensureCatalogSeeded()`
+- [ ] 4. Fix `GET /admin/categories` to derive from words as fallback
+- [ ] 5. Fix `GET /admin/words` pagination with `total`
+- [ ] 6. Fix `POST /admin/categories` to not require difficulty
+- [ ] 7. Fix frontend dashboard: load categories on mount
+- [ ] 8. Fix frontend dashboard: word form category dropdown
+- [ ] 9. Fix frontend dashboard: word difficulty only easy/medium/hard
+- [ ] 10. Fix frontend dashboard: remove category difficulty field
+- [ ] 11. Commit and redeploy
 

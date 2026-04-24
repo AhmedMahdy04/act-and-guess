@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 
 const Word = require('../models/Word');
+const Category = require('../models/Category');
 const DEFAULT_WORDS = require('../defaultWords');
 
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
@@ -106,7 +107,8 @@ async function ensureCatalogSeeded() {
     return memoryWords;
   }
 
-  const operations = DEFAULT_WORDS
+  // Seed words
+  const wordOperations = DEFAULT_WORDS
     .map((entry) => normalizeWordInput(entry))
     .filter((entry) => entry.word)
     .map((entry) => ({
@@ -123,8 +125,35 @@ async function ensureCatalogSeeded() {
       }
     }));
 
-  if (operations.length) {
-    await Word.bulkWrite(operations, { ordered: false });
+  if (wordOperations.length) {
+    await Word.bulkWrite(wordOperations, { ordered: false });
+  }
+
+  // Seed categories from default words
+  const uniqueCategories = [...new Set(
+    DEFAULT_WORDS
+      .map((entry) => slugifyCategory(entry.category, ''))
+      .filter(Boolean)
+  )];
+
+  const categoryOperations = uniqueCategories.map((slug) => ({
+    updateOne: {
+      filter: { slug },
+      update: {
+        $setOnInsert: {
+          slug,
+          name: formatCategoryLabel(slug),
+          description: '',
+          icon: '',
+          active: true
+        }
+      },
+      upsert: true
+    }
+  }));
+
+  if (categoryOperations.length) {
+    await Category.bulkWrite(categoryOperations, { ordered: false });
   }
 
   return Word.find({ active: true }).lean();

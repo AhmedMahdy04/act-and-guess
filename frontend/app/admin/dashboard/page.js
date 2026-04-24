@@ -14,13 +14,18 @@ const TABS = [
   { id: 'admins', label: 'Admins' }
 ];
 
-const DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed'];
+const WORD_DIFFICULTIES = ['easy', 'medium', 'hard'];
+const FILTER_DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed'];
 
 export default function AdminDashboard() {
   const router = useRouter();
   const [admin, setAdmin] = useState(null);
   const [tab, setTab] = useState('words');
   const [loading, setLoading] = useState(true);
+
+  // Categories state (loaded globally, needed for word form + filters)
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
 
   // Words state
   const [words, setWords] = useState([]);
@@ -31,10 +36,9 @@ export default function AdminDashboard() {
   const [wordForm, setWordForm] = useState({ word: '', category: '', difficulty: 'medium' });
   const [editingWord, setEditingWord] = useState(null);
 
-  // Categories state
-  const [categories, setCategories] = useState([]);
+  // Categories tab state
   const [showCatForm, setShowCatForm] = useState(false);
-  const [catForm, setCatForm] = useState({ name: '', description: '', icon: '', difficulty: 'medium' });
+  const [catForm, setCatForm] = useState({ name: '', description: '', icon: '' });
   const [editingCat, setEditingCat] = useState(null);
 
   // Admins state
@@ -72,6 +76,12 @@ export default function AdminDashboard() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  // Load categories globally once auth is ready
+  useEffect(() => {
+    if (!admin) return;
+    loadCategories();
+  }, [admin]);
+
   useEffect(() => {
     if (!admin) return;
     if (tab === 'words') loadWords();
@@ -83,6 +93,20 @@ export default function AdminDashboard() {
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_user');
     router.push('/admin/login');
+  };
+
+  // ── Categories (global helper) ──
+  const loadCategories = async () => {
+    if (categoriesLoading) return;
+    setCategoriesLoading(true);
+    try {
+      const data = await adminApi.listCategories();
+      setCategories(data.categories || []);
+    } catch (err) {
+      console.error('Failed to load categories:', err.message);
+    } finally {
+      setCategoriesLoading(false);
+    }
   };
 
   // ── Words ──
@@ -104,7 +128,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     try {
       if (editingWord) {
-        await adminApi.updateWord(editingWord._id, wordForm);
+        await adminApi.updateWord(editingWord._id || editingWord.id, wordForm);
       } else {
         await adminApi.createWord(wordForm);
       }
@@ -127,27 +151,18 @@ export default function AdminDashboard() {
     }
   };
 
-  // ── Categories ──
-  const loadCategories = async () => {
-    try {
-      const data = await adminApi.listCategories();
-      setCategories(data.categories || []);
-    } catch (err) {
-      console.error('Failed to load categories:', err.message);
-    }
-  };
-
+  // ── Categories tab ──
   const handleSaveCat = async (e) => {
     e.preventDefault();
     try {
       if (editingCat) {
-        await adminApi.updateCategory(editingCat._id, catForm);
+        await adminApi.updateCategory(editingCat._id || editingCat.id, catForm);
       } else {
         await adminApi.createCategory(catForm);
       }
       setShowCatForm(false);
       setEditingCat(null);
-      setCatForm({ name: '', description: '', icon: '', difficulty: 'medium' });
+      setCatForm({ name: '', description: '', icon: '' });
       loadCategories();
     } catch (err) {
       alert(err.message);
@@ -204,7 +219,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const isHead = admin?.role === 'head';
+  const isHead = admin?.isHeadAdmin;
   const totalPages = Math.ceil(wordTotal / 20);
 
   return (
@@ -273,7 +288,7 @@ export default function AdminDashboard() {
                     className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
                   >
                     <option value="">All difficulties</option>
-                    {DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
+                    {FILTER_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                   <select
                     value={wordFilter.category}
@@ -281,7 +296,7 @@ export default function AdminDashboard() {
                     className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
                   >
                     <option value="">All categories</option>
-                    {categories.map((c) => <option key={c._id} value={c.name}>{c.name}</option>)}
+                    {categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}
                   </select>
                 </div>
 
@@ -297,20 +312,21 @@ export default function AdminDashboard() {
                         required
                         className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
                       />
-                      <input
-                        type="text"
-                        placeholder="Category"
+                      <select
                         value={wordForm.category}
                         onChange={(e) => setWordForm((f) => ({ ...f, category: e.target.value }))}
                         required
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-                      />
+                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
+                      >
+                        <option value="">Select category...</option>
+                        {categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}
+                      </select>
                       <select
                         value={wordForm.difficulty}
                         onChange={(e) => setWordForm((f) => ({ ...f, difficulty: e.target.value }))}
                         className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
                       >
-                        {DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
+                        {WORD_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </div>
                     <div className="flex gap-2">
@@ -332,7 +348,7 @@ export default function AdminDashboard() {
                     </thead>
                     <tbody>
                       {words.map((w) => (
-                        <tr key={w._id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                        <tr key={w._id || w.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
                           <td className="px-3 py-2 text-slate-300 font-medium">{w.word}</td>
                           <td className="px-3 py-2 text-slate-400">{w.category || '—'}</td>
                           <td className="px-3 py-2">
@@ -348,7 +364,7 @@ export default function AdminDashboard() {
                               className="text-primary hover:underline text-xs"
                             >Edit</button>
                             <button
-                              onClick={() => handleDeleteWord(w._id)}
+                              onClick={() => handleDeleteWord(w._id || w.id)}
                               className="text-rose-400 hover:underline text-xs"
                             >Delete</button>
                           </td>
@@ -383,7 +399,7 @@ export default function AdminDashboard() {
               <Card className="p-5">
                 <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
                   <h2 className="text-base font-bold text-slate-200">Categories</h2>
-                  <Button size="sm" onClick={() => { setEditingCat(null); setCatForm({ name: '', description: '', icon: '', difficulty: 'medium' }); setShowCatForm(true); }}>
+                  <Button size="sm" onClick={() => { setEditingCat(null); setCatForm({ name: '', description: '', icon: '' }); setShowCatForm(true); }}>
                     + Add Category
                   </Button>
                 </div>
@@ -414,13 +430,6 @@ export default function AdminDashboard() {
                         onChange={(e) => setCatForm((f) => ({ ...f, description: e.target.value }))}
                         className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none sm:col-span-2"
                       />
-                      <select
-                        value={catForm.difficulty}
-                        onChange={(e) => setCatForm((f) => ({ ...f, difficulty: e.target.value }))}
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
-                      >
-                        {DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
-                      </select>
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm" type="submit">Save</Button>
@@ -431,18 +440,19 @@ export default function AdminDashboard() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {categories.map((c) => (
-                    <div key={c._id} className="bg-base-900 border border-white/[0.06] rounded-xl p-4 hover:border-white/[0.12] transition">
+                    <div key={c.id} className="bg-base-900 border border-white/[0.06] rounded-xl p-4 hover:border-white/[0.12] transition">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
                           <span className="text-2xl">{c.icon || '📦'}</span>
                           <div>
                             <h3 className="text-sm font-bold text-slate-200">{c.name}</h3>
                             <p className="text-xs text-slate-500">{c.description || 'No description'}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{c.wordCount || 0} words</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', icon: c.icon || '', difficulty: c.difficulty }); setShowCatForm(true); }} className="text-primary hover:underline text-xs">Edit</button>
-                          <button onClick={() => handleDeleteCat(c._id)} className="text-rose-400 hover:underline text-xs">Delete</button>
+                          <button onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', icon: c.icon || '' }); setShowCatForm(true); }} className="text-primary hover:underline text-xs">Edit</button>
+                          <button onClick={() => handleDeleteCat(c.id)} className="text-rose-400 hover:underline text-xs">Delete</button>
                         </div>
                       </div>
                     </div>
@@ -513,17 +523,17 @@ export default function AdminDashboard() {
                     </thead>
                     <tbody>
                       {admins.map((a) => (
-                        <tr key={a._id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                        <tr key={a._id || a.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
                           <td className="px-3 py-2 text-slate-300">{a.email}</td>
                           <td className="px-3 py-2">
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              a.role === 'head' ? 'bg-amber-500/10 text-amber-300' : 'bg-slate-500/10 text-slate-300'
-                            }`}>{a.role}</span>
+                              a.role === 'head' || a.isHeadAdmin ? 'bg-amber-500/10 text-amber-300' : 'bg-slate-500/10 text-slate-300'
+                            }`}>{a.isHeadAdmin ? 'head' : a.role || 'admin'}</span>
                           </td>
-                          <td className="px-3 py-2 text-slate-500 text-xs">{new Date(a.createdAt).toLocaleDateString()}</td>
+                          <td className="px-3 py-2 text-slate-500 text-xs">{a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—'}</td>
                           <td className="px-3 py-2 text-right">
-                            {isHead && a.role !== 'head' && (
-                              <button onClick={() => handleDeleteAdmin(a._id)} className="text-rose-400 hover:underline text-xs">Delete</button>
+                            {isHead && !a.isHeadAdmin && (
+                              <button onClick={() => handleDeleteAdmin(a._id || a.id)} className="text-rose-400 hover:underline text-xs">Delete</button>
                             )}
                           </td>
                         </tr>

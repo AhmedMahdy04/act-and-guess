@@ -102,7 +102,7 @@ router.delete('/admins/:id', adminAuth, requireHeadAdmin, async (req, res) => {
 
 router.get('/words', adminAuth, async (req, res) => {
   try {
-    const { category, difficulty, search } = req.query;
+    const { category, difficulty, search, page = 1, limit = 20 } = req.query;
     const query = { active: true };
 
     if (category && category !== 'all') {
@@ -115,9 +115,18 @@ router.get('/words', adminAuth, async (req, res) => {
       query.normalizedWord = { $regex: search.toLowerCase().trim(), $options: 'i' };
     }
 
-    const words = await Word.find(query)
-      .sort({ createdAt: -1 })
-      .lean();
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [words, total] = await Promise.all([
+      Word.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Word.countDocuments(query)
+    ]);
 
     res.json({
       words: words.map((w) => ({
@@ -127,7 +136,10 @@ router.get('/words', adminAuth, async (req, res) => {
         difficulty: w.difficulty,
         createdBy: w.createdBy,
         createdAt: w.createdAt
-      }))
+      })),
+      total,
+      page: pageNum,
+      limit: limitNum
     });
   } catch (err) {
     console.error('List words error:', err);
@@ -213,9 +225,24 @@ router.delete('/words/:id', adminAuth, async (req, res) => {
 
 router.get('/categories', adminAuth, async (req, res) => {
   try {
-    const categories = await Category.find({ active: true })
+    let categories = await Category.find({ active: true })
       .sort({ name: 1 })
       .lean();
+
+    // Fallback: derive categories from words if none seeded yet
+    if (!categories.length) {
+      const wordCategories = await Word.distinct('category', { active: true });
+      categories = wordCategories
+        .filter(Boolean)
+        .sort()
+        .map((slug) => ({
+          _id: slug,
+          slug,
+          name: wordService.formatCategoryLabel(slug),
+          description: '',
+          icon: ''
+        }));
+    }
 
     // Count words per category
     const wordCounts = await Word.aggregate([
@@ -227,7 +254,7 @@ router.get('/categories', adminAuth, async (req, res) => {
 
     res.json({
       categories: categories.map((c) => ({
-        id: c._id.toString(),
+        id: c._id?.toString ? c._id.toString() : c._id,
         slug: c.slug,
         name: c.name,
         description: c.description,
