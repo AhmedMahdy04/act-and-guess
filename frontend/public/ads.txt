@@ -1,0 +1,9 @@
+# Adsterra ads.txt
+# Replace PUBLISHER_ID with your actual Adsterra publisher ID before deploying.
+# Contact Adsterra support or check your dashboard to find your publisher ID.
+#
+# Example:
+# adsterra.com, 123456, DIRECT
+#
+# If you use other ad networks, add their entries below.
+

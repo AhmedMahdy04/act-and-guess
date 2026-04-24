@@ -6,6 +6,8 @@ import CurrentWord from '../../components/CurrentWord';
 import GameTimer from '../../components/GameTimer';
 import GuessInput from '../../components/GuessInput';
 import Scoreboard from '../../components/Scoreboard';
+import AdBanner from '../../components/AdBanner';
+import { AD_SLOTS } from '../../lib/adConfig';
 import { useGameStore } from '../store';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -117,6 +119,16 @@ export default function Game() {
                 <span className="font-bold text-slate-200">{game.lastRound.word.toUpperCase()}</span>
               </p>
             )}
+
+            {/* Between-rounds ad */}
+            <div className="flex justify-center py-2">
+              <AdBanner
+                scripts={AD_SLOTS.large.scripts}
+                html={AD_SLOTS.large.html}
+                className="w-full flex justify-center"
+              />
+            </div>
+
             <Scoreboard teams={game.teams} />
           </Card>
         </section>

@@ -5,7 +5,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { motion } from 'framer-motion';
 import TeamList from '../../components/TeamList';
 import Scoreboard from '../../components/Scoreboard';
+import AdBanner from '../../components/AdBanner';
 import { useGameStore } from '../store';
+import { AD_SLOTS } from '../../lib/adConfig';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 
@@ -234,6 +236,13 @@ export default function Lobby() {
               </Button>
             </div>
           </Card>
+
+          {/* Ad */}
+          <AdBanner
+            scripts={AD_SLOTS.large.scripts}
+            html={AD_SLOTS.large.html}
+            className="w-full flex justify-center"
+          />
 
           {/* Host Settings */}
           {isHost && (

@@ -3,6 +3,7 @@ import GameInitializer from '../components/GameInitializer';
 import PageTransitions from '../components/PageTransitions';
 import Logo from '../components/Logo';
 import Link from 'next/link';
+import CookieConsent from '../components/CookieConsent';
 
 export const metadata = {
   title: 'Act & Guess — Multiplayer Party Game',
@@ -41,10 +42,12 @@ export default function RootLayout({ children }) {
           </div>
         </header>
 
-        <div className="pt-16 relative z-10">
+        <div className="pt-16 relative z-10 pb-20">
           <GameInitializer />
           <PageTransitions>{children}</PageTransitions>
         </div>
+
+        <CookieConsent />
       </body>
     </html>
   )

@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../store';
 import Scoreboard from '../../components/Scoreboard';
+import AdBanner from '../../components/AdBanner';
+import { AD_SLOTS } from '../../lib/adConfig';
 import { useRouter } from 'next/navigation';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -59,6 +61,15 @@ export default function Results() {
           )}
         </div>
       </motion.div>
+
+      {/* Big post-game ad */}
+      <div className="my-8 sm:my-10 flex justify-center">
+        <AdBanner
+          scripts={AD_SLOTS.large.scripts}
+          html={AD_SLOTS.large.html}
+          className="w-full flex justify-center"
+        />
+      </div>
 
       <Scoreboard teams={game?.teams || {}} />
 
