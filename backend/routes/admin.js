@@ -74,7 +74,7 @@ router.post('/admins', adminAuth, requireHeadAdmin, async (req, res) => {
   }
 });
 
-router.get('/admins', adminAuth, requireHeadAdmin, async (req, res) => {
+router.get('/admins', adminAuth, async (req, res) => {
   try {
     const admins = await adminService.listAdmins();
     res.json({ admins: admins.map((a) => ({
@@ -225,24 +225,31 @@ router.delete('/words/:id', adminAuth, async (req, res) => {
 
 router.get('/categories', adminAuth, async (req, res) => {
   try {
-    let categories = await Category.find({ active: true })
-      .sort({ name: 1 })
-      .lean();
+    // Load both real Category documents and word-derived categories
+    const [dbCategories, wordCategorySlugs] = await Promise.all([
+      Category.find({ active: true }).sort({ name: 1 }).lean(),
+      Word.distinct('category', { active: true })
+    ]);
 
-    // Fallback: derive categories from words if none seeded yet
-    if (!categories.length) {
-      const wordCategories = await Word.distinct('category', { active: true });
-      categories = wordCategories
-        .filter(Boolean)
-        .sort()
-        .map((slug) => ({
-          _id: slug,
-          slug,
-          name: wordService.formatCategoryLabel(slug),
-          description: '',
-          icon: ''
-        }));
-    }
+    // Build a map of real categories by slug
+    const dbMap = new Map(dbCategories.map((c) => [c.slug, c]));
+
+    // Derive categories from words that don't have a real document yet
+    const derivedCategories = wordCategorySlugs
+      .filter(Boolean)
+      .filter((slug) => !dbMap.has(slug))
+      .sort()
+      .map((slug) => ({
+        _id: slug,
+        slug,
+        name: wordService.formatCategoryLabel(slug),
+        description: '',
+        icon: '',
+        _derived: true
+      }));
+
+    // Merge: real categories first, then derived ones
+    const merged = [...dbCategories, ...derivedCategories];
 
     // Count words per category
     const wordCounts = await Word.aggregate([
@@ -253,7 +260,7 @@ router.get('/categories', adminAuth, async (req, res) => {
     const countMap = Object.fromEntries(wordCounts.map((w) => [w._id, w.count]));
 
     res.json({
-      categories: categories.map((c) => ({
+      categories: merged.map((c) => ({
         id: c._id?.toString ? c._id.toString() : c._id,
         slug: c.slug,
         name: c.name,
@@ -355,4 +362,3 @@ router.delete('/categories/:id', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
-

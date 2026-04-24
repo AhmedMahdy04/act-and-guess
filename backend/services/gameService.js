@@ -4,6 +4,7 @@ const Game = require('../models/Game');
 const Team = require('../models/Team');
 const Player = require('../models/Player');
 const Word = require('../models/Word');
+const Category = require('../models/Category');
 const DEFAULT_WORDS = require('../defaultWords');
 
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
@@ -138,6 +139,33 @@ async function ensureCatalogSeeded() {
     await Word.bulkWrite(operations, { ordered: false });
   }
 
+  // Seed categories from default words
+  const uniqueCategories = [...new Set(
+    DEFAULT_WORDS
+      .map((entry) => slugifyCategory(entry.category, ''))
+      .filter(Boolean)
+  )];
+
+  const categoryOperations = uniqueCategories.map((slug) => ({
+    updateOne: {
+      filter: { slug },
+      update: {
+        $setOnInsert: {
+          slug,
+          name: formatCategoryLabel(slug),
+          description: '',
+          icon: '',
+          active: true
+        }
+      },
+      upsert: true
+    }
+  }));
+
+  if (categoryOperations.length) {
+    await Category.bulkWrite(categoryOperations, { ordered: false });
+  }
+
   return Word.find({ active: true }).lean();
 }
 
@@ -151,8 +179,17 @@ async function getAllWords() {
 
 async function getCatalogSummary() {
   const words = await getAllWords();
-  const categories = [...new Set(words.map((entry) => entry.category).filter(Boolean))].sort();
-  const categoryCounts = Object.fromEntries(categories.map((category) => [
+  const wordCategorySlugs = [...new Set(words.map((entry) => entry.category).filter(Boolean))].sort();
+
+  // Also load Category documents to include empty categories
+  const dbCategories = isDbReady()
+    ? await Category.find({ active: true }).sort({ name: 1 }).lean()
+    : [];
+
+  // Merge: all category slugs from both words and Category collection
+  const allSlugs = [...new Set([...wordCategorySlugs, ...dbCategories.map((c) => c.slug)])].sort();
+
+  const categoryCounts = Object.fromEntries(allSlugs.map((category) => [
     category,
     words.filter((entry) => entry.category === category).length
   ]));
@@ -164,7 +201,7 @@ async function getCatalogSummary() {
 
   return {
     totalWords: words.length,
-    categories,
+    categories: allSlugs,
     categoryCounts,
     difficultyCounts,
     recentWords: words.slice(0, 12).map((entry) => ({
