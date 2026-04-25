@@ -19,6 +19,7 @@ const gameSchema = new mongoose.Schema({
   timeLeft: Number,
   winner: String,
   wordCursor: { type: Number, default: 0 },
+  teamActorCursor: { type: Object, default: {} },
   scores: { type: Map, of: Number, default: {} },
   teams: [{ type: String }], // UUID strings
   players: [{ type: String }], // UUID strings

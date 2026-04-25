@@ -317,6 +317,7 @@ async function createGame(config, hostId, hostSocketId, hostUsername, hostTeamIn
     currentRound: 0,
     timeLeft: config.roundTime || 60,
     wordCursor: 0,
+    teamActorCursor: {},
     teams: Array.from({ length: teamCount }, (_, index) => `team${index + 1}`),
     players: [hostId],
     words: wordDeck,
@@ -408,6 +409,7 @@ async function startGame(gameCodeValue, nextDeck = []) {
           timeLeft: null,
           winner: null,
           wordCursor: 0,
+          teamActorCursor: {},
           words: nextDeck,
           recentGuesses: [],
           lastRound: null

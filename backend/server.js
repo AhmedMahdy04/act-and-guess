@@ -201,6 +201,30 @@ function buildScores(teams) {
   );
 }
 
+function getOrderedTeamIds(game) {
+  return Object.keys(game.teams || {}).sort((left, right) => {
+    const leftNumber = Number.parseInt(left.replace('team', ''), 10) || 0;
+    const rightNumber = Number.parseInt(right.replace('team', ''), 10) || 0;
+    return leftNumber - rightNumber;
+  });
+}
+
+function selectNextActorId(game, teamId) {
+  const teamPlayers = getConnectedTeamPlayers(game, teamId);
+  if (!teamPlayers.length) {
+    return null;
+  }
+
+  const teamCursor = Number.isInteger(game.teamActorCursor?.[teamId]) ? game.teamActorCursor[teamId] : 0;
+  const actorId = teamPlayers[teamCursor % teamPlayers.length];
+  game.teamActorCursor = {
+    ...(game.teamActorCursor || {}),
+    [teamId]: (teamCursor + 1) % teamPlayers.length
+  };
+
+  return actorId;
+}
+
 function clearGameTimers(gameId) {
   const intervalId = gameTimers.get(gameId);
   if (intervalId) {
@@ -397,6 +421,7 @@ function convertDbGameToMemory(dbGame) {
     timeLeft: dbGame.timeLeft ?? dbGame.roundTime ?? 60,
     winner: dbGame.winner || null,
     wordCursor: dbGame.wordCursor ?? 0,
+    teamActorCursor: dbGame.teamActorCursor || {},
     words: dbGame.words?.length ? dbGame.words : [...DEFAULT_WORDS],
     players,
     teams,
@@ -468,6 +493,7 @@ function persistRuntimeState(game) {
     timeLeft: game.timeLeft,
     winner: game.winner,
     wordCursor: game.wordCursor,
+    teamActorCursor: game.teamActorCursor || {},
     words: game.words,
     bannedPlayers: game.bannedPlayers || [],
     recentGuesses: game.recentGuesses,
@@ -511,6 +537,7 @@ function createGameState(config, hostPlayerId, hostSocketId, hostName, hostTeamI
     timeLeft: config.roundTime,
     winner: null,
     wordCursor: 0,
+    teamActorCursor: {},
     words: [...(config.wordDeck || DEFAULT_WORDS)],
     players: {},
     teams,
@@ -723,7 +750,7 @@ function findHostRequester(game, socketId) {
 }
 
 function findNextTeam(game) {
-  const playableTeams = Object.keys(game.teams).filter(
+  const playableTeams = getOrderedTeamIds(game).filter(
     (teamId) => teamHasConnectedPlayers(game, teamId, 2)
   );
 
@@ -832,7 +859,19 @@ async function startRound(gameId) {
     game.wordCursor = 0;
   }
 
-  const actorId = teamPlayers[Math.floor(Math.random() * teamPlayers.length)];
+  const actorId = selectNextActorId(game, nextTeamId);
+  if (!actorId) {
+    game.status = 'lobby';
+    game.currentTeam = null;
+    game.currentActorId = null;
+    game.currentWord = null;
+    game.timeLeft = game.roundTime;
+    persistRuntimeState(game);
+    emitGameErrorToPlayer(gameId, game.hostId, 'The next team has no active players.');
+    emitGameState(gameId);
+    return;
+  }
+
   const word = game.words[game.wordCursor];
 
   game.currentRound += 1;
@@ -1301,6 +1340,8 @@ io.on('connection', (socket) => {
       game.timeLeft = nextConfig.roundTime;
       game.winner = null;
       game.lastRound = null;
+      game.wordCursor = 0;
+      game.teamActorCursor = {};
       game.recentGuesses = [];
 
       Object.values(game.teams).forEach((team) => {
@@ -1336,6 +1377,7 @@ io.on('connection', (socket) => {
       game.lastRound = null;
       game.recentGuesses = [];
       game.wordCursor = 0;
+      game.teamActorCursor = {};
       game.words = await buildDeckFromConfig(game);
 
       Object.values(game.players).forEach((player) => {
@@ -1462,6 +1504,7 @@ io.on('connection', (socket) => {
       game.lastRound = null;
       game.recentGuesses = [];
       game.wordCursor = 0;
+      game.teamActorCursor = {};
       game.words = await buildDeckFromConfig(game);
 
       Object.values(game.teams).forEach((team) => {
