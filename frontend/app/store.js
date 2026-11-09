@@ -5,417 +5,315 @@ import { io } from 'socket.io-client';
 
 const PLAYER_ID_KEY = 'guess_game_player_id';
 const GAME_ID_KEY = 'guess_game_game_id';
-// Backend URL for Socket.IO connection
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4001';
+const SESSION_TOKEN_KEY = 'guess_game_session_token';
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4001').replace(/\/$/, '');
+const socket = io(BACKEND_URL, { autoConnect: false });
+const memoryStorage = new Map();
 
-const socket = io(BACKEND_URL, {
-  reconnection: true
-});
+export const ROOM_CODE_LENGTH = 6;
 
-function emitWithAck(socketInstance, event, payload, timeout = 5000) {
+export function normalizeRoomCode(value) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_LENGTH);
+}
+
+function emitWithAck(event, payload, timeout = 8000) {
+  if (!socket.connected) {
+    return Promise.reject(new Error('The game server is reconnecting. Try again in a moment.'));
+  }
+
   return new Promise((resolve, reject) => {
-    socketInstance.timeout(timeout).emit(event, payload, (err, response) => {
-      if (err) {
-        reject(new Error(`${event} request timed out or failed`));
-        return;
+    socket.timeout(timeout).emit(event, payload, (error, response) => {
+      if (error) {
+        reject(new Error('The game server did not respond. Try again in a moment.'));
+      } else if (!response || typeof response !== 'object') {
+        reject(new Error('The game server returned an invalid response.'));
+      } else if (response.error) {
+        reject(Object.assign(new Error(response.error), { code: response.code }));
+      } else {
+        resolve(response);
       }
-
-      resolve(response);
     });
   });
 }
 
-function normalizeSnapshot(snapshot, state, overrides = {}) {
-  const selfId = snapshot?.selfId ?? overrides.currentPlayerId ?? state.currentPlayerId ?? null;
-  const selfPlayer = selfId ? snapshot?.players?.[selfId] : null;
-
-  return {
-    game: snapshot,
-    players: snapshot?.players || {},
-    teams: snapshot?.teams || {},
-    status: snapshot?.status || 'home',
-    gameId: snapshot?.id || snapshot?.gameId || null,
-    currentPlayerId: selfId,
-    username: overrides.username ?? selfPlayer?.username ?? state.username,
-    teamId: overrides.teamId ?? selfPlayer?.teamId ?? state.teamId,
-    isHost: overrides.isHost ?? Boolean(selfId && snapshot?.hostId === selfId),
-    winner: snapshot?.winner || null,
-    timeLeft: snapshot?.timeLeft ?? 0,
-    lastError: overrides.lastError ?? null
-  };
+async function fetchApi(path) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${BACKEND_URL}${path}`, { signal: controller.signal, cache: 'no-store' });
+    if (!response.ok) throw new Error('The game server is unavailable.');
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function readStoredValue(key) {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined') return null;
+  if (memoryStorage.has(key)) return memoryStorage.get(key);
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
     return null;
   }
-
-  return window.sessionStorage.getItem(key);
 }
 
 function writeStoredValue(key, value) {
-  if (typeof window === 'undefined') {
-    return;
-  }
+  if (typeof window === 'undefined') return;
 
-  if (value) {
-    window.sessionStorage.setItem(key, value);
-  } else {
-    window.sessionStorage.removeItem(key);
+  memoryStorage.set(key, value || null);
+
+  try {
+    if (value) window.sessionStorage.setItem(key, value);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // Gameplay can continue for this page when session storage is blocked.
   }
+}
+
+function readSession() {
+  return {
+    gameId: readStoredValue(GAME_ID_KEY),
+    playerId: readStoredValue(PLAYER_ID_KEY),
+    sessionToken: readStoredValue(SESSION_TOKEN_KEY)
+  };
 }
 
 function ensurePlayerId() {
   const existing = readStoredValue(PLAYER_ID_KEY);
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
   const nextId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `player_${Math.random().toString(36).slice(2)}${Date.now()}`;
-
   writeStoredValue(PLAYER_ID_KEY, nextId);
   return nextId;
-}
-
-function persistSession(gameId, playerId) {
-  writeStoredValue(GAME_ID_KEY, gameId);
-  writeStoredValue(PLAYER_ID_KEY, playerId);
 }
 
 function clearStoredSession() {
   writeStoredValue(GAME_ID_KEY, null);
   writeStoredValue(PLAYER_ID_KEY, null);
+  writeStoredValue(SESSION_TOKEN_KEY, null);
 }
 
-function emptyState() {
+const emptyGame = {
+  game: null,
+  players: {},
+  teams: {},
+  status: 'home',
+  gameId: null,
+  currentPlayerId: null,
+  isHost: false,
+  winner: null,
+  lastError: null
+};
+
+function gameState({ sessionToken, ...game }) {
   return {
-    game: null,
-    players: {},
-    teams: {},
-    status: 'home',
-    gameId: null,
-    currentPlayerId: null,
-    username: '',
-    teamId: '',
-    isHost: false,
-    winner: null,
-    timeLeft: 0,
-    lastError: null,
-    gamePreview: null,
-    wordCatalog: null,
-    publicGames: []
+    game,
+    players: game.players || {},
+    teams: game.teams || {},
+    status: game.status,
+    gameId: game.id || game.gameId,
+    currentPlayerId: game.selfId,
+    isHost: game.isHost ?? (game.hostId === game.selfId),
+    winner: game.winner || null
   };
 }
 
-export const useGameStore = create((set, get) => ({
-  ...emptyState(),
+export const useGameStore = create((set, get) => {
+  let catalogRequest;
+  let catalogInvalidated = false;
+  let lobbyRequest = 0;
+  let initialized = false;
 
-  socket,
+  function acceptSession(snapshot, playerId) {
+    const next = gameState(snapshot);
+    writeStoredValue(GAME_ID_KEY, next.gameId);
+    writeStoredValue(PLAYER_ID_KEY, next.currentPlayerId || playerId);
+    if (snapshot.sessionToken) writeStoredValue(SESSION_TOKEN_KEY, snapshot.sessionToken);
+    set({ ...next, lastError: null, sessionStatus: 'ready' });
+  }
 
-  createGame: async (config, username, teamId) => {
-    const { socket: currentSocket } = get();
-    const playerId = ensurePlayerId();
+  async function command(event, payload) {
     try {
-      const snapshot = await emitWithAck(currentSocket, 'createGame', {
-        ...config,
-        username,
-        teamId,
-        playerId
-      });
-
-      if (snapshot?.error) {
-        throw new Error(snapshot.error);
-      }
-
-      persistSession(snapshot.id || snapshot.gameId, snapshot.selfId || playerId);
-      set((state) => ({
-        ...normalizeSnapshot(snapshot, state, { username, teamId }),
-        gamePreview: null,
-        lastError: null
-      }));
-
-      return snapshot;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  fetchGamePreview: async (gameId) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'getGameInfo', { gameId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ gamePreview: response, lastError: null });
-      return response;
-    } catch (error) {
-      set({ gamePreview: null, lastError: error.message });
-      throw error;
-    }
-  },
-
-  fetchPublicGames: async () => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'listPublicGames', {});
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ publicGames: response?.games || [], lastError: null });
-      return response?.games || [];
-    } catch (error) {
-      set({ publicGames: [], lastError: error.message });
-      throw error;
-    }
-  },
-
-  fetchWordCatalog: async () => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'getWordCatalog', {});
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ wordCatalog: response, lastError: null });
-      return response;
-    } catch (error) {
-      set({ wordCatalog: null, lastError: error.message });
-      throw error;
-    }
-  },
-
-  joinGame: async (gameId, username, teamId) => {
-    const { socket: currentSocket } = get();
-    const playerId = ensurePlayerId();
-    try {
-      const response = await emitWithAck(currentSocket, 'joinGame', { gameId, username, teamId, playerId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      persistSession(response.id || response.gameId, response.selfId || playerId);
-      set((state) => ({
-        ...normalizeSnapshot(response, state, { username, teamId }),
-        gamePreview: null,
-        lastError: null
-      }));
-
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  startGame: async (gameId) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'startGame', { gameId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
+      if (get().sessionStatus !== 'ready') throw new Error('Please wait while we restore your game session.');
+      set({ lastError: null });
+      const response = await emitWithAck(event, payload);
       set({ lastError: null });
       return response;
     } catch (error) {
       set({ lastError: error.message });
       throw error;
     }
-  },
+  }
 
-  submitGuess: async (gameId, guess) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'submitGuess', { gameId, guess });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ lastError: null });
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  updateGameSettings: async (gameId, settings) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'updateGameSettings', { gameId, settings });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ lastError: null });
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  movePlayer: async (gameId, playerId, teamId) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'movePlayer', { gameId, playerId, teamId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-      set({ lastError: null });
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  transferHost: async (gameId, playerId) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'transferHost', { gameId, playerId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-      set({ lastError: null });
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  leaveGame: async (gameId) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'leaveGame', { gameId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-      clearStoredSession();
-      set(emptyState());
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  kickPlayer: async (gameId, playerId, ban = false) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'kickPlayer', { gameId, playerId, ban });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ lastError: null });
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  returnToLobby: async (gameId) => {
-    const { socket: currentSocket } = get();
-    try {
-      const response = await emitWithAck(currentSocket, 'returnToLobby', { gameId });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      set({ lastError: null });
-      return response;
-    } catch (error) {
-      set({ lastError: error.message });
-      throw error;
-    }
-  },
-
-  clearError: () => set({ lastError: null }),
-
-  resetGame: ({ cleanupRemote = false } = {}) => {
-    const { socket: currentSocket, gameId, isHost } = get();
-    if (cleanupRemote && gameId && isHost) {
-      currentSocket.emit('endGameConfirm', { gameId });
+  async function resumeSession() {
+    const session = readSession();
+    if (!session.gameId || !session.playerId) {
+      set({ sessionStatus: 'ready' });
+      return;
     }
 
-    clearStoredSession();
-    set(emptyState());
-  },
-
-  initListeners: () => {
-    const { socket: currentSocket } = get();
-
-    currentSocket.off('gameState');
-    currentSocket.off('gameError');
-    currentSocket.off('connect');
-    currentSocket.off('sessionRemoved');
-
-    currentSocket.on('gameState', (snapshot) => {
-      persistSession(snapshot.id || snapshot.gameId, snapshot.selfId || get().currentPlayerId);
-      set((state) => normalizeSnapshot(snapshot, state));
-    });
-
-    currentSocket.on('gameError', (payload) => {
-      set({ lastError: payload?.message || 'Something went wrong.' });
-    });
-
-    currentSocket.on('sessionRemoved', (payload) => {
-      clearStoredSession();
-      set({
-        ...emptyState(),
-        lastError: payload?.reason === 'banned'
-          ? 'You were banned from that lobby.'
-          : 'You were removed from that lobby.'
-      });
-    });
-
-    const attemptResume = async () => {
-      const gameId = readStoredValue(GAME_ID_KEY);
-      const playerId = readStoredValue(PLAYER_ID_KEY);
-
-      if (!gameId || !playerId) {
-        return;
-      }
-
-      try {
-        const snapshot = await emitWithAck(currentSocket, 'resumeSession', { gameId, playerId }, 4000);
-        if (snapshot?.error) {
-          if (snapshot.error === 'Game session not found.') {
-            clearStoredSession();
-            set(emptyState());
-          } else {
-            set({ lastError: snapshot.error });
-          }
-          return;
-        }
-
-        persistSession(snapshot.id || snapshot.gameId, snapshot.selfId || playerId);
-        set((state) => ({
-          ...normalizeSnapshot(snapshot, state),
-          lastError: null
-        }));
-      } catch (error) {
-        set({ lastError: error.message });
-      }
+    set({ sessionStatus: 'restoring' });
+    const socketId = socket.id;
+    const isCurrent = () => {
+      const current = readSession();
+      return socket.id === socketId && current.gameId === session.gameId && current.playerId === session.playerId;
     };
 
-    // If already connected (e.g. page refresh), resume immediately
-    if (currentSocket.connected) {
-      attemptResume();
+    try {
+      const snapshot = await emitWithAck('resumeSession', session);
+      if (isCurrent()) acceptSession(snapshot, session.playerId);
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (error.code === 'SESSION_NOT_FOUND' || error.message === 'Game session not found.') {
+        clearStoredSession();
+        set({ ...emptyGame, sessionStatus: 'ready', lastError: 'Your previous game session has ended.' });
+        return;
+      }
+      set({ sessionStatus: 'failed', lastError: error.message });
+    }
+  }
+
+  function fetchWordCatalog({ invalidate = false } = {}) {
+    if (catalogRequest) {
+      catalogInvalidated ||= invalidate;
+      return catalogRequest;
     }
 
-    // Also handle future reconnections
-    currentSocket.on('connect', attemptResume);
-  }
-}));
+    catalogRequest = (async () => {
+      try {
+        do {
+          catalogInvalidated = false;
+          if (!get().wordCatalog) set({ catalogStatus: 'loading' });
+          try {
+            const wordCatalog = await fetchApi('/api/word-catalog');
+            if (!catalogInvalidated) set({ wordCatalog, catalogStatus: 'ready' });
+          } catch {
+            if (!catalogInvalidated) set({ catalogStatus: 'error' });
+          }
+        } while (catalogInvalidated);
+      } finally {
+        catalogRequest = undefined;
+      }
+    })();
 
+    return catalogRequest;
+  }
+
+  return {
+    ...emptyGame,
+    connectionStatus: 'connecting',
+    sessionStatus: 'checking',
+    wordCatalog: null,
+    catalogStatus: 'idle',
+    publicGames: [],
+    publicGamesStatus: 'idle',
+
+    createGame: async (config, username, teamId) => {
+      const playerId = ensurePlayerId();
+      const snapshot = await command('createGame', { ...config, username, teamId, playerId });
+      acceptSession(snapshot, playerId);
+      return snapshot;
+    },
+
+    joinGame: async (gameId, username, teamId) => {
+      const playerId = ensurePlayerId();
+      const snapshot = await command('joinGame', { gameId, username, teamId, playerId });
+      acceptSession(snapshot, playerId);
+      return snapshot;
+    },
+
+    fetchGamePreview: (gameId) => emitWithAck('getGameInfo', { gameId }),
+
+    fetchPublicGames: async () => {
+      const request = ++lobbyRequest;
+      set({ publicGamesStatus: 'loading' });
+      try {
+        const response = await fetchApi('/api/public-games');
+        if (request === lobbyRequest) set({ publicGames: response.games || [], publicGamesStatus: 'ready' });
+      } catch {
+        if (request === lobbyRequest) set({ publicGamesStatus: 'error' });
+      }
+    },
+
+    fetchWordCatalog,
+
+    startGame: (gameId) => command('startGame', { gameId }),
+    submitGuess: (gameId, guess, roundId) => command('submitGuess', { gameId, guess, roundId }),
+    updateGameSettings: (gameId, settings) => command('updateGameSettings', { gameId, settings }),
+    movePlayer: (gameId, playerId, teamId) => command('movePlayer', { gameId, playerId, teamId }),
+    transferHost: (gameId, playerId) => command('transferHost', { gameId, playerId }),
+    kickPlayer: (gameId, playerId, ban = false) => command('kickPlayer', { gameId, playerId, ban }),
+    returnToLobby: (gameId) => command('returnToLobby', { gameId }),
+
+    leaveGame: async (gameId) => {
+      await command('leaveGame', { gameId });
+      clearStoredSession();
+      set(emptyGame);
+    },
+
+    closeGame: async (gameId) => {
+      await command('endGameConfirm', { gameId });
+      clearStoredSession();
+      set(emptyGame);
+    },
+
+    clearError: () => set({ lastError: null }),
+    resumeSession,
+
+    initListeners: () => {
+      if (initialized) return;
+      initialized = true;
+
+      const saved = readSession();
+      if (saved.gameId && (!saved.playerId || !saved.sessionToken)) {
+        clearStoredSession();
+        set({ sessionStatus: 'ready', lastError: 'Your previous session has expired. You can rejoin the room if it is open.' });
+      } else {
+        set({ sessionStatus: saved.gameId ? 'restoring' : 'ready' });
+      }
+
+      socket.on('connect', () => {
+        set({ connectionStatus: 'online' });
+        resumeSession();
+        if (get().catalogStatus !== 'idle') fetchWordCatalog({ invalidate: true });
+      });
+      const onDisconnected = () => {
+        set({
+          connectionStatus: 'reconnecting',
+          sessionStatus: readSession().gameId ? 'restoring' : 'ready'
+        });
+      };
+      socket.on('disconnect', onDisconnected);
+      socket.on('connect_error', onDisconnected);
+
+      socket.on('gameState', (snapshot) => {
+        const session = readSession();
+        if ((snapshot?.id || snapshot?.gameId) !== session.gameId || snapshot?.selfId !== session.playerId) return;
+        set(gameState(snapshot));
+      });
+      socket.on('gameError', (payload) => {
+        set({ lastError: payload?.message || 'Something went wrong.' });
+      });
+      socket.on('sessionRemoved', (payload) => {
+        if (!readSession().gameId || (payload?.gameId && payload.gameId !== readSession().gameId)) return;
+        clearStoredSession();
+        set({
+          ...emptyGame,
+          sessionStatus: 'ready',
+          lastError: {
+            banned: 'You were banned from that lobby.',
+            closed: 'The host closed the game.',
+            replaced: 'Your room was opened in another tab.'
+          }[payload?.reason] || 'You were removed from that lobby.'
+        });
+      });
+      socket.on('wordCatalogChanged', () => {
+        if (get().catalogStatus !== 'idle') fetchWordCatalog({ invalidate: true });
+      });
+      socket.connect();
+    }
+  };
+});

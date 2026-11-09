@@ -1,32 +1,14 @@
-'use client';
-
-import { motion } from 'framer-motion';
-
-export default function GameTimer({ timeLeft }) {
-  const safeTimeLeft = Number(timeLeft) || 0;
-  const isCritical = safeTimeLeft < 10;
-  const isSoon = safeTimeLeft < 20;
-
-  const colorClass = isCritical
-    ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-    : isSoon
-      ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-      : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
+export default function GameTimer({ timeLeft, roundTime, paused }) {
+  const seconds = Math.max(0, Number(timeLeft) || 0);
+  const percent = Math.min(100, (seconds / Math.max(1, Number(roundTime) || 0)) * 100);
+  const isCritical = !paused && seconds <= 5;
 
   return (
-    <motion.div
-      className={`px-5 py-3 rounded-xl font-bold text-center border ${colorClass}`}
-      initial={{ scale: 0.98, opacity: 0.6 }}
-      animate={{
-        scale: isCritical ? 1.04 : isSoon ? 1.02 : 1,
-        opacity: 1,
-      }}
-      transition={{ type: 'spring', stiffness: 280, damping: 20 }}
-    >
-      <div className={`text-2xl sm:text-3xl tabular-nums ${isCritical ? 'animate-pulse' : ''}`}>
-        {safeTimeLeft}s
+    <div className={`w-24 rounded-xl border px-3 py-2 text-center ${isCritical ? 'border-rose-400/40 bg-rose-500/10 text-rose-200' : 'border-indigo-400/30 bg-indigo-500/10 text-indigo-100'}`} role="timer" aria-label={`${seconds} seconds remaining`}>
+      <div className="text-lg font-black leading-none tabular-nums" aria-hidden="true">{seconds}s</div>
+      <div className="mt-2 h-1 rounded-full bg-white/10" aria-hidden="true">
+        <div className={`h-full rounded-full transition-[width] ${isCritical ? 'bg-rose-400' : 'bg-indigo-400'}`} style={{ width: `${percent}%` }} />
       </div>
-    </motion.div>
+    </div>
   );
 }
-

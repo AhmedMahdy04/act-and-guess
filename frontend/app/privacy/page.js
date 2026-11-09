@@ -1,55 +1,38 @@
+import CookieConsent from '../../components/CookieConsent';
+
 export default function Privacy() {
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-8 max-w-3xl mx-auto">
-      <h1 className="text-3xl font-bold text-slate-100 mb-6">Privacy Policy</h1>
+    <main className="mx-auto min-h-[calc(100dvh-4rem)] max-w-3xl px-4 py-8 sm:px-8 sm:py-12">
+      <h1 className="mb-6 text-3xl font-black text-slate-100">Privacy</h1>
 
-      <div className="space-y-6 text-slate-400 leading-relaxed">
+      <div className="space-y-6 leading-relaxed text-slate-300">
         <section>
-          <h2 className="text-lg font-bold text-slate-200 mb-2">1. Introduction</h2>
+          <h2 className="mb-2 text-lg font-bold text-slate-100">Game information</h2>
           <p>
-            This Privacy Policy explains how we collect, use, and protect your information when you use Act & Guess.
+            A room records the players’ chosen display names, team assignments, settings, guesses, and scores. Players in the room can see the roster and gameplay activity. Public rooms also list the host’s display name and room code on the home page.
           </p>
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-slate-200 mb-2">2. Information We Collect</h2>
-          <p>When you create or join a game, we temporarily store:</p>
-          <ul className="list-disc list-inside mt-2 space-y-1">
-            <li>Your chosen player name</li>
-            <li>Game room codes and scores</li>
-            <li>Team assignments</li>
-          </ul>
-          <p className="mt-2">
-            This data is stored in memory during gameplay and is not tied to any real-world identity.
+          <h2 className="mb-2 text-lg font-bold text-slate-100">Room history and reconnecting</h2>
+          <p>
+            The game keeps a session credential in your browser tab so you can reconnect. When MongoDB is enabled, it saves room state and match records so they survive server restarts. Closed rooms are archived.
           </p>
         </section>
 
-        <section>
-          <h2 className="text-lg font-bold text-slate-200 mb-2">3. Advertising</h2>
+        <section className="space-y-3">
+          <h2 className="text-lg font-bold text-slate-100">Advertising preferences</h2>
           <p>
-            We use third-party advertising partners (such as Adsterra) to display ads. These partners may use cookies or similar technologies to serve personalized ads based on your browsing activity.
+            On deployments that offer advertising, third-party ads only load if you allow them. Ad partners may use cookies or similar storage. The browser remembers your choice.
           </p>
-          <p className="mt-2">
-            You can opt out of personalized advertising through your browser settings or by visiting
-            <a href="https://www.youronlinechoices.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline"> Your Online Choices</a>.
-          </p>
+          <CookieConsent manage />
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-slate-200 mb-2">4. Data Retention</h2>
-          <p>
-            Game data is temporary and is removed when a game session ends or when the server restarts. We do not retain personal information permanently.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-lg font-bold text-slate-200 mb-2">5. Contact</h2>
-          <p>
-            If you have questions about this Privacy Policy, please contact the site administrator.
-          </p>
+          <h2 className="mb-2 text-lg font-bold text-slate-100">Contact</h2>
+          <p>Contact the site administrator for questions about game records or privacy.</p>
         </section>
       </div>
     </main>
   );
 }
-

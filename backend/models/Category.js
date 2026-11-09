@@ -5,7 +5,11 @@ const categorySchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   description: { type: String, default: '', trim: true },
   icon: { type: String, default: '' },
-  active: { type: Boolean, default: true }
+  active: { type: Boolean, default: true },
+  createdBy: { type: String, default: 'system' },
+  updatedBy: { type: String, default: null },
+  archivedAt: { type: Date, default: null },
+  archivedBy: { type: String, default: null }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Category', categorySchema);

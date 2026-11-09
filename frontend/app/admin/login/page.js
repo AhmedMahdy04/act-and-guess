@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import Link from 'next/link';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import Logo from '../../../components/Logo';
-import { adminApi } from '../../../lib/adminApi';
+import { adminApi, storeAdminToken } from '../../../lib/adminApi';
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('');
@@ -17,14 +17,14 @@ export default function AdminLogin() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError('');
 
     try {
       const data = await adminApi.login(email, password);
-      localStorage.setItem('admin_token', data.token);
-      localStorage.setItem('admin_user', JSON.stringify(data.admin));
-      router.push('/admin/dashboard');
+      storeAdminToken(data.token);
+      router.replace('/admin/dashboard');
     } catch (err) {
       setError(err.message || 'Login failed.');
     } finally {
@@ -33,17 +33,12 @@ export default function AdminLogin() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="w-full max-w-sm"
-      >
+    <main className="flex items-center justify-center px-4 py-12 sm:py-20">
+      <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <Logo size="lg" className="justify-center mb-2" />
-          <h1 className="text-xl font-bold text-slate-200">Admin Portal</h1>
-          <p className="text-sm text-slate-500">Sign in to manage words and categories.</p>
+          <h1 className="text-2xl font-bold text-slate-100">Admin sign-in</h1>
+          <p className="mt-1 text-sm text-slate-400">Manage the game’s word library and categories.</p>
         </div>
 
         <Card className="p-6 sm:p-8">
@@ -52,6 +47,8 @@ export default function AdminLogin() {
               <span className="text-sm font-semibold text-slate-400">Email</span>
               <input
                 type="email"
+                autoComplete="username"
+                maxLength={254}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@example.com"
@@ -64,6 +61,7 @@ export default function AdminLogin() {
               <span className="text-sm font-semibold text-slate-400">Password</span>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -73,7 +71,7 @@ export default function AdminLogin() {
             </label>
 
             {error && (
-              <div className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
+              <div role="alert" className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
                 {error}
               </div>
             )}
@@ -83,7 +81,10 @@ export default function AdminLogin() {
             </Button>
           </form>
         </Card>
-      </motion.div>
+        <p className="mt-5 text-center">
+          <Link href="/" className="text-sm font-semibold text-indigo-200 hover:underline">Back to game</Link>
+        </p>
+      </div>
     </main>
   );
 }

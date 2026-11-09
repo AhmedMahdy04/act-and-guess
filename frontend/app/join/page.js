@@ -1,202 +1,182 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useGameStore } from '../store';
-import { motion } from 'framer-motion';
-
+import { normalizeRoomCode, ROOM_CODE_LENGTH, useGameStore } from '../store';
+import { formatLabel } from '../../components/GameSettingsFields';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Logo from '../../components/Logo';
+import RoomUnavailable from '../../components/RoomUnavailable';
+
+const fieldClass = 'w-full rounded-xl border border-white/10 bg-base-800 px-4 py-3.5 text-base font-semibold text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50';
 
 export default function JoinGame() {
-  const [gameId, setGameId] = useState('');
-  const [username, setUsername] = useState('');
-  const [teamId, setTeamId] = useState('team1');
-  const [loading, setLoading] = useState(false);
-  const [lookupLoading, setLookupLoading] = useState(false);
+  return (
+    <Suspense fallback={<JoinLayout><p role="status" className="text-slate-300">Opening the join form…</p></JoinLayout>}>
+      <JoinForm />
+    </Suspense>
+  );
+}
+
+function JoinForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const { joinGame, fetchGamePreview, gamePreview, lastError, clearError } = useGameStore();
+  const inviteCode = normalizeRoomCode(searchParams.get('id') || '');
+  const [code, setCode] = useState(inviteCode);
+  const [username, setUsername] = useState('');
+  const [teamId, setTeamId] = useState('');
+  const [previewResult, setPreviewResult] = useState(null);
+  const [joining, setJoining] = useState(false);
+  const [lookupAttempt, setLookupAttempt] = useState(0);
+  const [requestedCode, setRequestedCode] = useState('');
+  const { joinGame, fetchGamePreview, lastError, clearError, connectionStatus, sessionStatus, gameId } = useGameStore();
 
   useEffect(() => {
-    const id = searchParams.get('id');
-    if (id) {
-      setGameId(id.toUpperCase());
-    }
-  }, [searchParams]);
+    setCode(inviteCode);
+  }, [inviteCode]);
+
+  const canLookUp = connectionStatus === 'online' && sessionStatus === 'ready' && !gameId;
+  const lookupCode = canLookUp && (code.length === ROOM_CODE_LENGTH || code === inviteCode || code === requestedCode) ? code : '';
 
   useEffect(() => {
-    if (!gameId) return;
+    if (!lookupCode) return;
 
-    let cancelled = false;
-
-    async function loadPreview() {
-      setLookupLoading(true);
-      clearError();
-
+    let active = true;
+    const timer = setTimeout(async () => {
       try {
-        const preview = await fetchGamePreview(gameId);
-        if (!cancelled) {
-          const defaultTeam = Object.keys(preview.teams || {})[0] || 'team1';
-          setTeamId((current) => (preview.teams?.[current] ? current : defaultTeam));
-        }
+        const preview = await fetchGamePreview(lookupCode);
+        if (active) setPreviewResult({ code: lookupCode, lookupAttempt, preview });
       } catch (error) {
-        if (!cancelled) console.error(error);
-      } finally {
-        if (!cancelled) setLookupLoading(false);
+        if (active) setPreviewResult({ code: lookupCode, lookupAttempt, error: error.message });
       }
-    }
+    }, 250);
 
-    loadPreview();
-    return () => { cancelled = true; };
-  }, [clearError, fetchGamePreview, gameId]);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [fetchGamePreview, lookupAttempt, lookupCode]);
 
-  const teamEntries = useMemo(
-    () => Object.entries(gamePreview?.teams || {}),
-    [gamePreview]
-  );
+  const result = previewResult?.code === code && previewResult?.lookupAttempt === lookupAttempt ? previewResult : null;
+  const preview = result?.preview;
+  const teams = Object.values(preview?.teams || {});
+  const selectedTeam = teams.find((team) => team.id === teamId && !team.isFull) || teams.find((team) => !team.isFull);
+  const lookingUp = Boolean(lookupCode && !result);
+  const canJoin = !joining && connectionStatus === 'online' && sessionStatus === 'ready'
+    && Boolean(username.trim() && selectedTeam && preview?.status === 'lobby');
 
-  const handleJoin = async () => {
-    if (!gameId || !username || !teamId) return;
-
-    setLoading(true);
-    clearError();
-
+  async function handleJoin(event) {
+    event.preventDefault();
+    if (!canJoin) return;
+    setJoining(true);
     try {
-      await joinGame(gameId, username, teamId);
-      router.push('/lobby');
-    } catch (error) {
-      console.error('Join failed:', error);
+      await joinGame(code, username.trim(), selectedTeam.id);
+      router.replace('/lobby');
+    } catch {
+      setLookupAttempt((current) => current + 1);
     } finally {
-      setLoading(false);
+      setJoining(false);
     }
-  };
+  }
+
+  if (gameId || sessionStatus !== 'ready') return <RoomUnavailable />;
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-8">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: 'easeOut' }}
-        className="w-full max-w-md"
-      >
-        <div className="text-center mb-6">
-          <Logo size="lg" className="justify-center mb-2" />
-          <p className="text-slate-500 text-sm">Enter the room code and join the fun.</p>
-        </div>
+    <JoinLayout>
+      <form onSubmit={handleJoin} aria-busy={joining}>
+        <fieldset disabled={joining} className="space-y-5">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-semibold text-slate-300">Room code</span>
+            <input
+              value={code}
+              onChange={(event) => {
+                setCode(normalizeRoomCode(event.target.value));
+                setPreviewResult(null);
+                setRequestedCode('');
+                clearError();
+              }}
+              placeholder="ABC123"
+              className={`${fieldClass} text-center tracking-widest`}
+              inputMode="text"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={ROOM_CODE_LENGTH}
+              required
+              aria-describedby="room-lookup"
+            />
+          </label>
 
-        <Card className="p-6 sm:p-8">
-          <div className="space-y-5">
-            <FormField label="Room Code">
-              <input
-                value={gameId}
-                onChange={(event) => setGameId(event.target.value.toUpperCase())}
-                placeholder="ABC123"
-                className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-lg font-bold text-center text-slate-200 placeholder-slate-600 tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/20"
-                inputMode="text"
-                maxLength={8}
-              />
-            </FormField>
-
-            <FormField label="Your Name">
-              <input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Enter your name"
-                maxLength={24}
-                className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/20"
-              />
-            </FormField>
-
-            <FormField label="Choose Team">
-              <select
-                value={teamId}
-                onChange={(event) => setTeamId(event.target.value)}
-                disabled={!teamEntries.length || gamePreview?.status !== 'lobby'}
-                className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-              >
-                {teamEntries.length ? (
-                  teamEntries.map(([currentTeamId, team], index) => (
-                    <option key={currentTeamId} value={currentTeamId} disabled={team.isFull}>
-                      Team {index + 1} {team.isFull ? '(Full)' : `(${team.playerCount}/${gamePreview.playersPerTeam})`}
-                    </option>
-                  ))
-                ) : (
-                  <option value="team1">Enter a room code first</option>
-                )}
-              </select>
-            </FormField>
-
-            {gamePreview && (
-              <div className="rounded-xl border border-white/[0.05] bg-base-800/40 px-4 py-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <PreviewStat label="Status" value={capitalize(gamePreview.status)} />
-                  <PreviewStat label="Visibility" value={capitalize(gamePreview.visibility || 'private')} />
-                  <PreviewStat label="Category" value={formatLabel(gamePreview.category || 'random')} />
-                  <PreviewStat label="Difficulty" value={capitalize(gamePreview.difficulty || 'mixed')} />
-                </div>
+          <div id="room-lookup" className="text-sm text-slate-300" role="status">
+            {lookingUp && 'Looking up your room…'}
+            {canLookUp && code && !lookupCode && (
+              <Button variant="ghost" size="sm" onClick={() => setRequestedCode(code)}>Find room</Button>
+            )}
+            {result?.error && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-rose-200">{result.error}</span>
+                <Button variant="ghost" size="sm" onClick={() => setLookupAttempt((current) => current + 1)}>Retry</Button>
               </div>
             )}
-
-            <Button
-              onClick={handleJoin}
-              disabled={
-                loading ||
-                lookupLoading ||
-                !gameId ||
-                !username.trim() ||
-                !teamEntries.length ||
-                gamePreview?.status !== 'lobby'
-              }
-              size="lg"
-              className="w-full justify-center"
-            >
-              {loading ? 'Joining...' : lookupLoading ? 'Loading...' : 'Join Game'}
-            </Button>
-
-            {lastError && (
-              <div className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
-                {lastError}
-              </div>
-            )}
+            {preview?.status === 'lobby' && (selectedTeam ? `Hosted by ${preview.hostName}` : 'This lobby is full.')}
+            {preview && preview.status !== 'lobby' && 'This room is already in play or has finished.'}
           </div>
-        </Card>
-      </motion.div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-semibold text-slate-300">Your name</span>
+            <input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="e.g. Alex"
+              maxLength={24}
+              autoComplete="nickname"
+              required
+              className={fieldClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-semibold text-slate-300">Choose a team</span>
+            <select
+              value={selectedTeam?.id || ''}
+              onChange={(event) => setTeamId(event.target.value)}
+              disabled={!selectedTeam || preview?.status !== 'lobby'}
+              className={fieldClass}
+            >
+              {!selectedTeam && <option value="">{teams.length ? 'No spots available' : 'Enter a room code first'}</option>}
+              {teams.map((team) => (
+                <option key={team.id} value={team.id} disabled={team.isFull}>
+                  {team.name} {team.isFull ? '· Full' : `· ${team.playerCount}/${preview.playersPerTeam}`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {preview && (
+            <p className="rounded-xl border border-white/10 bg-base-800/50 px-4 py-3 text-sm text-slate-300">
+              {preview.categoryLabel || formatLabel(preview.category)} · {formatLabel(preview.difficulty)} difficulty · {preview.roundTime}s rounds
+            </p>
+          )}
+          {lastError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{lastError}</p>}
+          <Button type="submit" disabled={!canJoin} size="lg" className="w-full">
+            {joining ? 'Joining…' : 'Join lobby'}
+          </Button>
+        </fieldset>
+      </form>
+    </JoinLayout>
+  );
+}
+
+function JoinLayout({ children }) {
+  return (
+    <main className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-lg flex-col justify-center px-4 py-10 sm:px-6">
+      <header className="mb-6">
+        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-indigo-300">Room invite</p>
+        <h1 className="text-3xl font-black text-slate-100 sm:text-4xl">Join a game</h1>
+        <p className="mt-2 text-slate-300">Enter your friend’s room code and pick an open team.</p>
+      </header>
+      <Card className="p-5 sm:p-8">{children}</Card>
     </main>
   );
-}
-
-function FormField({ label, children }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-semibold text-slate-400">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function PreviewStat({ label, value }) {
-  return (
-    <div className="rounded-lg bg-base-900/60 border border-white/[0.04] px-3 py-2 text-center">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
-      <div className="mt-0.5 text-sm font-bold text-primary">{value}</div>
-    </div>
-  );
-}
-
-function capitalize(value) {
-  const next = String(value || '');
-  return next.charAt(0).toUpperCase() + next.slice(1);
-}
-
-function formatLabel(value) {
-  if (value === 'random') return 'Random';
-  return String(value || '')
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
 }
 

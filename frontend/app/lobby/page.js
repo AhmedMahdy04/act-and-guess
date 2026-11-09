@@ -1,539 +1,250 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
-import { motion } from 'framer-motion';
-import TeamList from '../../components/TeamList';
-import Scoreboard from '../../components/Scoreboard';
-import AdBanner from '../../components/AdBanner';
 import { useGameStore } from '../store';
-import { AD_SLOTS } from '../../lib/adConfig';
+import TeamList from '../../components/TeamList';
+import GameSettingsFields, { formatLabel, getSettingsProblem } from '../../components/GameSettingsFields';
+import RoomUnavailable from '../../components/RoomUnavailable';
+import AdBanner from '../../components/AdBanner';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 
 export default function Lobby() {
-  const [starting, setStarting] = useState(false);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [settings, setSettings] = useState({
-    teamCount: 2,
-    playersPerTeam: 3,
-    targetScore: 10,
-    roundTime: 30,
-    visibility: 'private',
-    category: 'random',
-    difficulty: 'mixed'
-  });
-
+  const [pending, setPending] = useState('');
+  const [notice, setNotice] = useState('');
+  const [joinLink, setJoinLink] = useState('');
+  const router = useRouter();
   const {
-    game,
-    players,
-    teams,
-    status,
-    isHost,
-    startGame,
-    gameId,
-    lastError,
-    clearError,
-    fetchWordCatalog,
-    wordCatalog,
-    updateGameSettings,
-    movePlayer,
-    transferHost,
-    leaveGame,
-    kickPlayer
+    game, players, teams, isHost, gameId, lastError, wordCatalog, catalogStatus,
+    connectionStatus, sessionStatus, startGame, updateGameSettings, movePlayer, transferHost, leaveGame, kickPlayer
   } = useGameStore();
 
   useEffect(() => {
-    fetchWordCatalog().catch(() => {});
-  }, [fetchWordCatalog]);
-
-  useEffect(() => {
-    if (!game) return;
-    setSettings({
-      teamCount: game.teamCount,
-      playersPerTeam: game.playersPerTeam,
-      targetScore: game.targetScore,
-      roundTime: game.roundTime,
-      visibility: game.visibility || 'private',
-      category: game.category || 'random',
-      difficulty: game.difficulty || 'mixed'
-    });
-  }, [game]);
-
-  const joinLink = useMemo(() => {
-    if (!gameId || typeof window === 'undefined') return '';
-    return `${window.location.origin}/join?id=${gameId}`;
+    setJoinLink(gameId ? `${window.location.origin}/join?id=${encodeURIComponent(gameId)}` : '');
   }, [gameId]);
 
-  const categoryOptions = useMemo(
-    () => wordCatalog?.categoryOptions || ['random'],
-    [wordCatalog]
-  );
+  if (!game) return <RoomUnavailable />;
 
   const totalPlayers = Object.keys(players).length;
-  const totalSlots = game ? game.teamCount * game.playersPerTeam : 0;
   const readyTeams = Object.values(teams).filter((team) => (
-    team.players?.filter((playerId) => players[playerId]?.connected !== false).length >= 2
+    team.players.filter((playerId) => players[playerId]?.connected).length >= 2
   )).length;
-  const canStart = Boolean(game) && Object.values(teams).every((team) => (
-    team.players?.filter((playerId) => players[playerId]?.connected !== false).length >= 2
+  const inLobby = game.status === 'lobby';
+  const canAct = !pending && connectionStatus === 'online' && sessionStatus === 'ready';
+  const canStart = inLobby && canAct && readyTeams >= 2 && !getSettingsProblem(game, wordCatalog);
+  const category = wordCatalog?.categoryDetails?.find(({ slug }) => slug === game.category);
+  const settings = {
+    teamCount: game.teamCount,
+    playersPerTeam: game.playersPerTeam,
+    targetScore: game.targetScore,
+    roundTime: game.roundTime,
+    visibility: game.visibility,
+    category: game.category,
+    difficulty: game.difficulty
+  };
+  const roster = Object.values(players).sort((left, right) => (
+    Number(right.isHost) - Number(left.isHost) || left.username.localeCompare(right.username)
   ));
 
-  const roster = Object.values(players).sort((left, right) => {
-    if (left.isHost) return -1;
-    if (right.isHost) return 1;
-    return left.username.localeCompare(right.username);
-  });
-
-  if (!game) {
-    return (
-      <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-8">
-        <Card className="p-8 sm:p-12 text-center max-w-md">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary text-3xl flex items-center justify-center mx-auto mb-5">
-            🎭
-          </div>
-          <h1 className="text-2xl font-bold text-slate-200 mb-2">No Active Game</h1>
-          <p className="text-slate-500 text-sm mb-6">Create a new game or join an existing one to open the lobby.</p>
-          <Button onClick={() => window.location.href = '/create'}>Host a Game</Button>
-        </Card>
-      </main>
-    );
+  async function act(name, action, message = '') {
+    if (!canAct) return;
+    setPending(name);
+    setNotice('');
+    try {
+      await action();
+      setNotice(message);
+    } catch {
+      // Server errors are displayed at the top of the lobby.
+    } finally {
+      setPending('');
+    }
   }
 
-  const handleStartGame = async () => {
-    setStarting(true);
-    clearError();
-    try {
-      await startGame(game.id);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const handleSaveSettings = async () => {
-    setSavingSettings(true);
-    clearError();
-    try {
-      await updateGameSettings(game.id, settings);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  const handleLeave = async () => {
-    if (!confirm('Leave this lobby and return to the home page?')) return;
-    clearError();
-    try {
-      await leaveGame(game.id);
-    } catch (error) {
-      console.error(error);
-      window.location.href = '/';
-    }
-  };
-
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-8 max-w-7xl mx-auto">
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: 'easeOut' }}
-        className="mb-8 sm:mb-10"
-      >
-        <div className="text-center">
-          <h1 className="text-3xl sm:text-4xl font-bold text-slate-100 mb-2">Game Lobby</h1>
-          <div className="inline-flex items-center gap-3 bg-base-800 border border-white/[0.06] rounded-full px-5 py-2">
-            <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Room</span>
-            <code className="font-mono text-primary font-bold text-sm">{game.id || gameId}</code>
-            <button
-              onClick={() => navigator.clipboard.writeText(game.id || gameId)}
-              className="text-slate-500 hover:text-slate-300 transition-colors text-xs"
-              title="Copy code"
-            >
-              Copy
-            </button>
-          </div>
+    <main className="mx-auto min-h-[calc(100dvh-4rem)] max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-indigo-300">Room <code className="ml-1 text-sm text-indigo-200">{gameId}</code></p>
+          <h1 className="text-3xl font-black text-slate-100 sm:text-4xl">Game lobby</h1>
+          <p className="mt-2 text-sm text-slate-300">Share the room code, then get your teams ready.</p>
         </div>
-      </motion.div>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!canAct}
+          onClick={() => {
+            if (window.confirm('Leave this lobby?')) {
+              act('leave', async () => { await leaveGame(gameId); router.push('/'); });
+            }
+          }}
+        >
+          {pending === 'leave' ? 'Leaving…' : 'Leave lobby'}
+        </Button>
+      </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5 sm:gap-6 items-start">
+      {lastError && <p role="alert" className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{lastError}</p>}
+      {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{notice}</p>}
+
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.82fr)]">
         <div className="space-y-5">
-          <TeamList teams={teams} players={players} maxPlayersPerTeam={game.playersPerTeam} />
-          <Scoreboard teams={teams} />
-        </div>
-
-        <div className="space-y-5">
-          {/* Status */}
-          <Card className="p-5 sm:p-6">
-            <h3 className="text-lg font-bold text-slate-200 mb-4">Lobby Status</h3>
-            <div className="grid grid-cols-3 gap-3 mb-5">
-              <StatusPill label="Players" value={`${totalPlayers}/${totalSlots}`} />
-              <StatusPill label="Ready" value={`${readyTeams}/${game.teamCount}`} />
-              <StatusPill label="Round" value={`${game.roundTime}s`} />
+          <Card className="space-y-4 p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold text-slate-100">Ready to play?</h2>
+              <p className="text-sm text-slate-300">{totalPlayers}/{game.teamCount * game.playersPerTeam} spots filled</p>
             </div>
-
-            <div className="flex flex-wrap gap-2 mb-5">
-              <Tag label={capitalize(game.visibility)} />
-              <Tag label={formatLabel(game.category)} />
-              <Tag label={capitalize(game.difficulty)} />
+            <p className="text-sm text-slate-300">
+              {readyTeams} of {game.teamCount} teams ready. You need at least two teams with two connected players each.
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-300">
+              {[formatLabel(game.visibility), category?.name || formatLabel(game.category), formatLabel(game.difficulty), `${game.roundTime}s rounds`, `${game.targetScore} points to win`].map((label, index) => (
+                <span key={`${index}-${label}`} className="rounded-md border border-white/10 bg-base-800 px-2.5 py-1.5">{label}</span>
+              ))}
             </div>
-
-            {isHost && status === 'lobby' && (
-              <Button
-                onClick={handleStartGame}
-                disabled={!canStart || starting}
-                size="lg"
-                className="w-full justify-center mb-3"
-              >
-                {starting
-                  ? 'Starting...'
-                  : canStart
-                    ? 'Start Game'
-                    : 'Need 2+ players per team'}
+            {isHost ? (
+              <Button onClick={() => act('start', () => startGame(gameId))} disabled={!canStart} size="lg" className="w-full">
+                {pending === 'start' ? 'Starting…' : 'Start game'}
               </Button>
-            )}
-
-            {!isHost && (
-              <p className="text-center text-slate-500 text-sm py-3 mb-3">
-                Waiting for the host to start the game.
+            ) : (
+              <p className="rounded-xl border border-white/10 bg-base-800/60 px-4 py-3 text-sm text-slate-300">
+                Waiting for {game.hostName || 'the host'} to start the game.
               </p>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLeave}
-              className="w-full justify-center"
-            >
-              Leave Lobby
-            </Button>
           </Card>
 
-          {/* Invite */}
-          <Card className="p-5 sm:p-6">
-            <h3 className="text-lg font-bold text-slate-200 mb-4">Invite Players</h3>
-            <div className="flex flex-col gap-4 items-center">
-              {joinLink && (
-                <div className="bg-white rounded-xl p-2.5 shadow-lg">
-                  <QRCodeSVG value={joinLink} size={160} />
-                </div>
-              )}
-              <input
-                value={joinLink}
-                readOnly
-                className="w-full bg-base-800 border border-white/[0.06] rounded-xl px-4 py-3 font-mono text-xs text-center text-slate-400"
-              />
-              <Button
-                variant="secondary"
-                onClick={() => navigator.clipboard.writeText(joinLink)}
-                size="sm"
-                className="w-full justify-center"
-              >
-                Copy Join Link
-              </Button>
-            </div>
-          </Card>
+          <TeamList teams={teams} players={players} maxPlayersPerTeam={game.playersPerTeam} />
 
-          {/* Ad */}
-          <AdBanner
-            scripts={AD_SLOTS.large.scripts}
-            html={AD_SLOTS.large.html}
-            className="w-full flex justify-center"
-          />
-
-          {/* Host Settings */}
-          {isHost && (
-            <Card className="p-5 sm:p-6 space-y-4">
-              <h3 className="text-lg font-bold text-slate-200">Next Session Settings</h3>
-              <p className="text-xs text-slate-500 -mt-3">Changes apply after returning to lobby</p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <NumberField
-                  label="Teams"
-                  value={settings.teamCount}
-                  min={2}
-                  max={6}
-                  onChange={(value) => setSettings((current) => ({
-                    ...current,
-                    teamCount: Math.min(6, Math.max(2, value || 2))
-                  }))}
-                />
-                <NumberField
-                  label="Players / Team"
-                  value={settings.playersPerTeam}
-                  min={2}
-                  max={8}
-                  onChange={(value) => setSettings((current) => ({
-                    ...current,
-                    playersPerTeam: Math.min(8, Math.max(2, value || 2))
-                  }))}
-                />
-                <NumberField
-                  label="Target Score"
-                  value={settings.targetScore}
-                  min={1}
-                  max={50}
-                  onChange={(value) => setSettings((current) => ({
-                    ...current,
-                    targetScore: Math.min(50, Math.max(1, value || 1))
-                  }))}
-                />
-                <NumberField
-                  label="Round Time"
-                  value={settings.roundTime}
-                  min={1}
-                  max={60}
-                  onChange={(value) => setSettings((current) => ({
-                    ...current,
-                    roundTime: Math.min(60, Math.max(1, value || 1))
-                  }))}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <SelectField
-                  label="Visibility"
-                  value={settings.visibility}
-                  onChange={(value) => setSettings((current) => ({ ...current, visibility: value }))}
-                  options={[
-                    { value: 'private', label: 'Private' },
-                    { value: 'public', label: 'Public' }
-                  ]}
-                />
-                <SelectField
-                  label="Difficulty"
-                  value={settings.difficulty}
-                  onChange={(value) => setSettings((current) => ({ ...current, difficulty: value }))}
-                  options={[
-                    { value: 'mixed', label: 'Mixed' },
-                    { value: 'easy', label: 'Easy' },
-                    { value: 'medium', label: 'Medium' },
-                    { value: 'hard', label: 'Hard' }
-                  ]}
-                />
-                <SelectField
-                  label="Category"
-                  value={settings.category}
-                  onChange={(value) => setSettings((current) => ({ ...current, category: value }))}
-                  options={categoryOptions.map((option) => ({
-                    value: option,
-                    label: formatLabel(option)
-                  }))}
-                />
-              </div>
-
-              <Button
-                onClick={handleSaveSettings}
-                disabled={savingSettings}
-                variant="secondary"
-                className="w-full justify-center"
-              >
-                {savingSettings ? 'Saving...' : 'Save Settings'}
-              </Button>
-            </Card>
-          )}
-
-          {/* Player Management */}
-          {isHost && (
-            <Card className="p-5 sm:p-6 space-y-3">
-              <h3 className="text-lg font-bold text-slate-200">Players</h3>
+          {isHost && inLobby && (
+            <Card className="space-y-3 p-5 sm:p-6">
+              <h2 className="text-lg font-bold text-slate-100">Manage players</h2>
               {roster.map((player) => (
-                <div
-                  key={player.id}
-                  className="rounded-xl border border-white/[0.04] bg-base-800/40 px-4 py-3 flex flex-col gap-2"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-200 text-sm truncate">
-                        {player.username}
-                        {player.isHost && <span className="ml-2 text-[10px] uppercase tracking-wider text-primary font-bold">Host</span>}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {teams[player.teamId]?.name || player.teamId} · {player.connected === false ? <span className="text-amber-500">Offline</span> : <span className="text-accent-emerald">Online</span>}
-                      </div>
-                    </div>
+                <div key={player.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-base-800/40 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-100">{player.username}{player.isHost && <span className="ml-2 text-xs text-indigo-300">Host</span>}</p>
+                    <p className="mt-1 text-xs text-slate-300">{teams[player.teamId]?.name} · {player.connected ? 'Connected' : 'Reconnecting'}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TeamMoveSelect player={player} teams={teams} maxPlayers={game.playersPerTeam} disabled={!canAct} onMove={(id) => act('move', () => movePlayer(gameId, player.id, id), `${player.username} moved to ${teams[id].name}.`)} />
                     {!player.isHost && (
-                      <div className="flex gap-2 shrink-0">
-                        <Button
-                          variant="ghost"
-                          onClick={() => kickPlayer(game.id, player.id, false).catch(() => {})}
-                          size="sm"
-                        >
-                          Kick
-                        </Button>
-                        <Button
-                          variant="danger"
-                          onClick={() => kickPlayer(game.id, player.id, true).catch(() => {})}
-                          size="sm"
-                        >
-                          Ban
-                        </Button>
-                      </div>
+                      <>
+                        <Button variant="ghost" size="sm" disabled={!canAct || !player.connected} onClick={() => {
+                          if (window.confirm(`Make ${player.username} the host?`)) act('transfer', () => transferHost(gameId, player.id));
+                        }}>Make host</Button>
+                        <Button variant="ghost" size="sm" disabled={!canAct} aria-label={`Remove ${player.username}`} onClick={() => {
+                          if (window.confirm(`Remove ${player.username} from this lobby?`)) act('remove', () => kickPlayer(gameId, player.id), `${player.username} was removed.`);
+                        }}>Remove</Button>
+                        <Button variant="danger" size="sm" disabled={!canAct} aria-label={`Ban ${player.username}`} onClick={() => {
+                          if (window.confirm(`Ban ${player.username} from this room?`)) act('ban', () => kickPlayer(gameId, player.id, true), `${player.username} was banned.`);
+                        }}>Ban</Button>
+                      </>
                     )}
                   </div>
-
-                  {/* Host controls: move team + transfer host */}
-                  {isHost && !player.isHost && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <TeamMoveSelect
-                        player={player}
-                        teams={teams}
-                        game={game}
-                        onMove={(teamId) => movePlayer(game.id, player.id, teamId).catch(() => {})}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Make ${player.username} the new host?`)) {
-                            transferHost(game.id, player.id).catch(() => {});
-                          }
-                        }}
-                      >
-                        Make Host
-                      </Button>
-                    </div>
-                  )}
                 </div>
               ))}
             </Card>
           )}
+        </div>
 
-          {/* Non-host: simple player list */}
-          {!isHost && (
-            <Card className="p-5 sm:p-6 space-y-3">
-              <h3 className="text-lg font-bold text-slate-200">Players</h3>
-              {roster.map((player) => (
-                <div
-                  key={player.id}
-                  className="rounded-xl border border-white/[0.04] bg-base-800/40 px-4 py-3 flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-200 text-sm truncate">
-                      {player.username}
-                      {player.isHost && <span className="ml-2 text-[10px] uppercase tracking-wider text-primary font-bold">Host</span>}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {teams[player.teamId]?.name || player.teamId} · {player.connected === false ? <span className="text-amber-500">Offline</span> : <span className="text-accent-emerald">Online</span>}
-                    </div>
-                  </div>
-                </div>
-              ))}
+        <div className="space-y-5">
+          <InviteCard gameId={gameId} joinLink={joinLink} />
+
+          {isHost && inLobby && (
+            <Card className="p-5 sm:p-6">
+              <h2 className="text-lg font-bold text-slate-100">Room settings</h2>
+              <p className="mb-4 mt-1 text-sm text-slate-300">Saved settings are shared with everyone in this lobby.</p>
+              <SettingsForm
+                key={`${gameId}-${Object.values(settings).join('-')}`}
+                settings={settings}
+                catalog={wordCatalog}
+                catalogStatus={catalogStatus}
+                disabled={!canAct}
+                saving={pending === 'save'}
+                onSave={(values) => act('save', () => updateGameSettings(gameId, values), 'Room settings saved.')}
+              />
             </Card>
           )}
-
-          {lastError && (
-            <div className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
-              {lastError}
-            </div>
-          )}
+          <AdBanner />
         </div>
       </div>
     </main>
   );
 }
 
-function TeamMoveSelect({ player, teams, game, onMove }) {
-  const [value, setValue] = useState('');
-  const available = Object.values(teams).filter(
-    (t) => t.id !== player.teamId && t.players.length < game.playersPerTeam
-  );
+function SettingsForm({ settings, catalog, catalogStatus, disabled, saving, onSave }) {
+  const [draft, setDraft] = useState(settings);
+  const changed = Object.keys(settings).some((key) => settings[key] !== draft[key]);
+  const canSave = changed && !disabled && !getSettingsProblem(draft, catalog);
 
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); if (canSave) onSave(draft); }} aria-busy={saving}>
+      <fieldset disabled={disabled} className="space-y-4">
+        <GameSettingsFields
+          settings={draft}
+          catalog={catalog}
+          catalogStatus={catalogStatus}
+          onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
+        />
+        <Button type="submit" variant="secondary" disabled={!canSave} className="w-full">
+          {saving ? 'Saving…' : 'Save settings'}
+        </Button>
+      </fieldset>
+    </form>
+  );
+}
+
+function InviteCard({ gameId, joinLink }) {
+  const [copyStatus, setCopyStatus] = useState('');
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(joinLink);
+      setCopyStatus('Join link copied.');
+    } catch {
+      setCopyStatus('Select the join link above to copy it.');
+    }
+  }
+
+  return (
+    <Card className="space-y-4 p-5 sm:p-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-100">Invite friends</h2>
+        <p className="mt-1 text-sm text-slate-300">Share code <strong className="font-mono text-indigo-300">{gameId}</strong>, send the link, or let friends scan the QR code.</p>
+      </div>
+      {joinLink && (
+        <div className="mx-auto w-fit rounded-xl bg-white p-3">
+          <QRCodeSVG value={joinLink} size={144} title="QR code for the room invite" />
+        </div>
+      )}
+      <label className="block space-y-1.5">
+        <span className="text-xs font-semibold text-slate-300">Join link</span>
+        <input
+          value={joinLink}
+          readOnly
+          onFocus={(event) => event.target.select()}
+          className="w-full rounded-xl border border-white/10 bg-base-800 px-4 py-3 font-mono text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/50"
+        />
+      </label>
+      <Button variant="secondary" onClick={copyLink} size="sm" disabled={!joinLink} className="w-full">Copy join link</Button>
+      {copyStatus && <p role="status" className="text-center text-sm text-slate-300">{copyStatus}</p>}
+    </Card>
+  );
+}
+
+function TeamMoveSelect({ player, teams, maxPlayers, disabled, onMove }) {
+  const available = Object.values(teams).filter((team) => team.id !== player.teamId && team.players.length < maxPlayers);
   if (!available.length) return null;
 
   return (
-    <div className="flex items-center gap-2">
-      <select
-        value={value}
-        onChange={(e) => {
-          const teamId = e.target.value;
-          setValue('');
-          if (teamId) onMove(teamId);
-        }}
-        className="bg-base-800 border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none"
-      >
-        <option value="">Move to...</option>
-        {available.map((t) => (
-          <option key={t.id} value={t.id}>{t.name} ({t.players.length}/{game.playersPerTeam})</option>
-        ))}
-      </select>
-    </div>
+    <select
+      value=""
+      onChange={(event) => { if (event.target.value) onMove(event.target.value); }}
+      aria-label={`Move ${player.username} to another team`}
+      disabled={disabled}
+      className="rounded-lg border border-white/10 bg-base-800 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+    >
+      <option value="">Move to…</option>
+      {available.map((team) => <option key={team.id} value={team.id}>{team.name} ({team.players.length}/{maxPlayers})</option>)}
+    </select>
   );
 }
-
-function FormField({ label, children }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-semibold text-slate-400">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function SelectField({ label, value, onChange, options }) {
-  return (
-    <FormField label={label}>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-base font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </FormField>
-  );
-}
-
-function NumberField({ label, value, onChange, min, max }) {
-  return (
-    <FormField label={label}>
-      <input
-        type="number"
-        value={value}
-        onChange={(event) => onChange(Number.parseInt(event.target.value, 10))}
-        min={min}
-        max={max}
-        className="w-full bg-base-800 border border-white/[0.08] rounded-xl px-4 py-3.5 text-lg font-bold text-center text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
-      />
-    </FormField>
-  );
-}
-
-function StatusPill({ label, value }) {
-  return (
-    <div className="rounded-xl bg-base-800/60 border border-white/[0.04] px-3 py-2.5 text-center">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
-      <div className="mt-0.5 text-sm font-bold text-slate-200">{value}</div>
-    </div>
-  );
-}
-
-function Tag({ label }) {
-  return (
-    <span className="inline-flex px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/[0.06] text-xs font-medium text-slate-400">
-      {label}
-    </span>
-  );
-}
-
-function capitalize(value) {
-  const next = String(value || '');
-  return next.charAt(0).toUpperCase() + next.slice(1);
-}
-
-function formatLabel(value) {
-  if (value === 'random') return 'Random';
-  return String(value || '')
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-

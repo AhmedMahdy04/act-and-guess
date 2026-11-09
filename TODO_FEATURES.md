@@ -13,7 +13,7 @@
 ## Architecture Decisions
 - **Admin routes**: Separate `/admin/login` and `/admin/dashboard` pages
 - **Categories**: Dedicated `Category` model (name, description, icon, difficulty, active)
-- **Head admin**: Auto-seeded on server startup if no admins exist
+- **Head admin**: Bootstrapped from environment variables after MongoDB connects
 - **Leave game**: Player marked `connected=false`, can rejoin via session resume
 - **Transfer host**: In lobby. If host disconnects/leaves, host auto-transfers to next available player
 
@@ -23,7 +23,7 @@
 
 ### 1.1 Dependencies
 - `bcryptjs` — password hashing
-- `jsonwebtoken` — JWT auth tokens
+- MongoDB — expiring, revocable admin sessions
 
 ### 1.2 Models Created
 - `backend/models/Admin.js` — email, passwordHash, name, role, createdBy, createdAt
@@ -31,10 +31,10 @@
 
 ### 1.3 Head Admin Seeding
 - `backend/services/adminService.js` — `seedHeadAdmin()` called on server startup after DB connect
-- Credentials: `ahmed2004mahdy@gmail.com` / `Ahmed2004$`
+- Set the bootstrap email and a new password as documented in the README.
 
 ### 1.4 Admin REST API (`backend/routes/admin.js`)
-- POST `/api/admin/login` → JWT token
+- POST `/api/admin/login` → expiring session token
 - GET `/api/admin/me`
 - GET `/api/admin/admins` (head only)
 - POST `/api/admin/admins` (head only)
@@ -47,7 +47,7 @@
 - POST `/api/admin/categories`
 - PUT `/api/admin/categories/:id`
 - DELETE `/api/admin/categories/:id`
-- JWT middleware: `backend/middleware/adminAuth.js`
+- Session middleware: `backend/middleware/adminAuth.js`
 
 ### 1.5 Socket.IO Events Added
 - `movePlayer` — host moves player to different team
@@ -82,13 +82,13 @@
 
 ### 3.1 Admin Login (`/admin/login`)
 - Email + password form → POST `/api/admin/login`
-- JWT stored in localStorage
+- Session token stored in the current browser tab
 - Redirects to `/admin/dashboard`
 
 ### 3.2 Admin Dashboard (`/admin/dashboard`)
 - Tabbed layout: Words | Categories | Admins
 - Auth gate: redirects to login if no token
-- JWT in Authorization header for all API calls
+- Session bearer token in the Authorization header for admin API calls
 
 **Words Tab:**
 - Paginated table (20/page), search + filter by category/difficulty
@@ -107,7 +107,7 @@
 - Delete non-head admins
 
 ### 3.3 Admin API Client
-- `frontend/lib/adminApi.js` — fetch wrapper with JWT auto-injection
+- `frontend/lib/adminApi.js` — fetch wrapper with session authentication
 
 ---
 
@@ -139,8 +139,7 @@
 ## Phase 5: Integration & Polish ✅
 
 ### 5.1 Environment Variables
-- `ADMIN_JWT_SECRET` — required for admin auth (falls back to `process.env.JWT_SECRET`)
-- `HEAD_ADMIN_EMAIL` / `HEAD_ADMIN_PASSWORD` — optional override for seed credentials
+- `HEAD_ADMIN_EMAIL` / `HEAD_ADMIN_PASSWORD` — configure initial access or migrate a legacy head account
 
 ### 5.2 Home Page
 - Added subtle "Admin Portal" footer link on home page
@@ -151,7 +150,7 @@
 - [x] Player leaves, stays offline in team
 - [x] Host leaves, auto-transfers to next player
 - [x] Admin login endpoint returns proper auth errors
-- [x] Admin routes protected by JWT middleware
+- [x] Admin routes protected by session middleware
 - [x] Word studio removed from lobby
 - [x] Leave buttons present on lobby/game/results
 
@@ -159,7 +158,6 @@
 - Local build fails due to `?` in folder name (pre-existing webpack issue)
 - Vercel builds fine — deploy there
 - Railway backend deploys normally
-- Set `ADMIN_JWT_SECRET` env var on Railway for production
 
 ---
 

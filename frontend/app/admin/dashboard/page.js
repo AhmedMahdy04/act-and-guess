@@ -1,555 +1,232 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
-import Logo from '../../../components/Logo';
-import { adminApi } from '../../../lib/adminApi';
+import Card from '../../../components/ui/Card';
+import { adminApi, clearAdminToken, getAdminToken, subscribeToAdminChanges } from '../../../lib/adminApi';
+import { CategoriesPanel, WordsPanel } from './_components/CatalogPanels';
+import { AccountsPanel, MatchesPanel } from './_components/OperationsPanels';
+import { DIFFICULTIES, Field, FormActions, inputClass, PanelStatus, useAdminData } from './_components/controls';
 
 const TABS = [
   { id: 'words', label: 'Words' },
   { id: 'categories', label: 'Categories' },
-  { id: 'admins', label: 'Admins' }
+  { id: 'matches', label: 'Matches', headOnly: true },
+  { id: 'admins', label: 'Accounts', headOnly: true }
 ];
-
-const WORD_DIFFICULTIES = ['easy', 'medium', 'hard'];
-const FILTER_DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed'];
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const [admin, setAdmin] = useState(null);
+  const [auth, setAuth] = useState({ admin: null, loading: true, error: '' });
+  const [authRetry, setAuthRetry] = useState(0);
   const [tab, setTab] = useState('words');
-  const [loading, setLoading] = useState(true);
+  const [initialCategory, setInitialCategory] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [versions, setVersions] = useState({ catalog: 0, admins: 0, matches: 0 });
+  const [notice, setNotice] = useState(null);
+  const [pending, setPending] = useState(false);
+  const [passwordForm, setPasswordForm] = useState(null);
+  const activeAction = useRef(false);
 
-  // Categories state (loaded globally, needed for word form + filters)
-  const [categories, setCategories] = useState([]);
-  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const onUnauthorized = useCallback(() => {
+    clearAdminToken();
+    setAuth({ admin: null, loading: true, error: '' });
+    router.replace('/admin/login');
+  }, [router]);
 
-  // Words state
-  const [words, setWords] = useState([]);
-  const [wordPage, setWordPage] = useState(1);
-  const [wordTotal, setWordTotal] = useState(0);
-  const [wordFilter, setWordFilter] = useState({ category: '', difficulty: '', search: '' });
-  const [showWordForm, setShowWordForm] = useState(false);
-  const [wordForm, setWordForm] = useState({ word: '', category: '', difficulty: 'medium' });
-  const [editingWord, setEditingWord] = useState(null);
-
-  // Categories tab state
-  const [showCatForm, setShowCatForm] = useState(false);
-  const [catForm, setCatForm] = useState({ name: '', description: '', icon: '' });
-  const [editingCat, setEditingCat] = useState(null);
-
-  // Admins state
-  const [admins, setAdmins] = useState([]);
-  const [showAdminForm, setShowAdminForm] = useState(false);
-  const [adminForm, setAdminForm] = useState({ email: '', password: '' });
+  const refresh = useCallback((scope) => {
+    setVersions((current) => ({
+      catalog: current.catalog + (!scope || scope === 'catalog' ? 1 : 0),
+      admins: current.admins + (!scope || scope === 'admins' ? 1 : 0),
+      matches: current.matches + (!scope || scope === 'matches' ? 1 : 0)
+    }));
+  }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('admin_token');
-    if (!token) {
-      router.replace('/admin/login');
+    if (!getAdminToken()) {
+      onUnauthorized();
       return;
     }
 
-    const saved = localStorage.getItem('admin_user');
-    if (saved) {
-      try {
-        setAdmin(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_user');
-        router.replace('/admin/login');
-        return;
-      }
-    }
+    const controller = new AbortController();
+    setAuth({ admin: null, loading: true, error: '' });
+    adminApi.me(controller.signal).then((admin) => {
+      if (!controller.signal.aborted) setAuth({ admin, loading: false, error: '' });
+    }).catch((error) => {
+      if (controller.signal.aborted) return;
+      if (error.status === 401) onUnauthorized();
+      else setAuth({ admin: null, loading: false, error: error.message });
+    });
+    return () => controller.abort();
+  }, [authRetry, onUnauthorized]);
 
-    adminApi.me()
-      .then((data) => {
-        setAdmin(data);
-        localStorage.setItem('admin_user', JSON.stringify(data));
-      })
-      .catch(() => {
-        logout();
-      })
-      .finally(() => setLoading(false));
-  }, [router]);
-
-  // Load categories globally once auth is ready
+  const admin = auth.admin;
   useEffect(() => {
     if (!admin) return;
-    loadCategories();
-  }, [admin]);
+    const unsubscribe = subscribeToAdminChanges(setConnected, refresh);
+    const sync = () => { if (!document.hidden) refresh(); };
+    const timer = setInterval(sync, 15000);
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
 
-  useEffect(() => {
-    if (!admin) return;
-    if (tab === 'words') loadWords();
-    if (tab === 'categories') loadCategories();
-    if (tab === 'admins') loadAdmins();
-  }, [tab, wordPage, wordFilter, admin]);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', sync);
+    };
+  }, [admin, refresh]);
 
-  const logout = () => {
-    localStorage.removeItem('admin_token');
-    localStorage.removeItem('admin_user');
-    router.push('/admin/login');
-  };
+  const categoryRequest = useAdminData(adminApi.listCategories, versions.catalog, onUnauthorized, Boolean(admin));
+  const categories = categoryRequest.data?.categories || [];
+  const available = categories.filter((category) => category.active);
+  const wordCount = available.reduce((sum, category) => sum + category.wordCount, 0);
+  const playableCategories = available.filter((category) => category.wordCount > 0);
+  const levels = DIFFICULTIES.filter((difficulty) => available.some((category) => category.difficultyCounts[difficulty] > 0));
 
-  // ── Categories (global helper) ──
-  const loadCategories = async () => {
-    if (categoriesLoading) return;
-    setCategoriesLoading(true);
+  async function execute(action, success, scope) {
+    if (activeAction.current) return false;
+    activeAction.current = true;
+    setPending(true);
+    setNotice(null);
     try {
-      const data = await adminApi.listCategories();
-      setCategories(data.categories || []);
-    } catch (err) {
-      console.error('Failed to load categories:', err.message);
+      await action();
+      if (success) setNotice({ message: success, error: false });
+      if (scope) refresh(scope);
+      return true;
+    } catch (error) {
+      if (error.status === 401) onUnauthorized();
+      else {
+        if (error.status === 409 && scope) refresh(scope);
+        setNotice({ message: error.message, error: true });
+      }
+      return false;
     } finally {
-      setCategoriesLoading(false);
+      activeAction.current = false;
+      setPending(false);
     }
-  };
+  }
 
-  // ── Words ──
-  const loadWords = async () => {
-    try {
-      const params = { page: wordPage, limit: 20 };
-      if (wordFilter.category) params.category = wordFilter.category;
-      if (wordFilter.difficulty) params.difficulty = wordFilter.difficulty;
-      if (wordFilter.search) params.search = wordFilter.search;
-      const data = await adminApi.listWords(params);
-      setWords(data.words || []);
-      setWordTotal(data.total || 0);
-    } catch (err) {
-      console.error('Failed to load words:', err.message);
-    }
-  };
+  async function logout() {
+    if (await execute(adminApi.logout)) onUnauthorized();
+  }
 
-  const handleSaveWord = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingWord) {
-        await adminApi.updateWord(editingWord._id || editingWord.id, wordForm);
-      } else {
-        await adminApi.createWord(wordForm);
-      }
-      setShowWordForm(false);
-      setEditingWord(null);
-      setWordForm({ word: '', category: '', difficulty: 'medium' });
-      loadWords();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
+  async function changePassword(event) {
+    event.preventDefault();
+    if (await execute(() => adminApi.changePassword(passwordForm))) onUnauthorized();
+  }
 
-  const handleDeleteWord = async (id) => {
-    if (!confirm('Delete this word?')) return;
-    try {
-      await adminApi.deleteWord(id);
-      loadWords();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
+  function selectTab(next) {
+    setNotice(null);
+    setInitialCategory('');
+    setTab(next);
+  }
 
-  // ── Categories tab ──
-  const handleSaveCat = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingCat) {
-        await adminApi.updateCategory(editingCat._id || editingCat.id, catForm);
-      } else {
-        await adminApi.createCategory(catForm);
-      }
-      setShowCatForm(false);
-      setEditingCat(null);
-      setCatForm({ name: '', description: '', icon: '' });
-      loadCategories();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
+  function viewWords(category) {
+    setInitialCategory(category);
+    setTab('words');
+  }
 
-  const handleDeleteCat = async (id) => {
-    if (!confirm('Delete this category? Associated words will not be deleted but will show as uncategorized.')) return;
-    try {
-      await adminApi.deleteCategory(id);
-      loadCategories();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // ── Admins ──
-  const loadAdmins = async () => {
-    try {
-      const data = await adminApi.listAdmins();
-      setAdmins(data.admins || []);
-    } catch (err) {
-      console.error('Failed to load admins:', err.message);
-    }
-  };
-
-  const handleCreateAdmin = async (e) => {
-    e.preventDefault();
-    try {
-      await adminApi.createAdmin(adminForm.email, adminForm.password);
-      setShowAdminForm(false);
-      setAdminForm({ email: '', password: '' });
-      loadAdmins();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleDeleteAdmin = async (id) => {
-    if (!confirm('Delete this admin?')) return;
-    try {
-      await adminApi.deleteAdmin(id);
-      loadAdmins();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  if (loading) {
+  if (!admin) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-slate-500">Loading...</div>
+      <main className="mx-auto max-w-xl px-4 py-16">
+        <Card className="p-6">
+          <h1 className="text-xl font-bold text-slate-100">Admin dashboard</h1>
+          <PanelStatus request={auth} onRetry={() => setAuthRetry(authRetry + 1)} />
+          <Link href="/" className="mt-4 inline-block text-sm font-semibold text-indigo-200 hover:underline">Back to game</Link>
+        </Card>
       </main>
     );
   }
 
-  const isHead = admin?.isHeadAdmin;
-  const totalPages = Math.ceil(wordTotal / 20);
+  const panelProps = { refresh, onUnauthorized, execute, pending };
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 lg:p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div className="flex items-center gap-4">
-            <Logo size="md" />
-            <div>
-              <h1 className="text-lg font-bold text-slate-200">Admin Dashboard</h1>
-              <p className="text-xs text-slate-500">Signed in as {admin?.email}</p>
-            </div>
+    <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 sm:py-10">
+      <section className="overflow-hidden rounded-3xl border border-indigo-300/15 bg-gradient-to-br from-indigo-950/80 via-base-900 to-base-950 p-5 sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300">Act &amp; Guess · Admin</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">Game operations</h1>
+            <p className="mt-2 break-all text-sm text-slate-300">{admin.email} · {admin.isHeadAdmin ? 'Head admin' : 'Catalog admin'}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => router.push('/')}>Back to Game</Button>
-            <Button variant="outline" size="sm" onClick={logout}>Logout</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => setPasswordForm({ currentPassword: '', password: '' })}>Change password</Button>
+            <Button size="sm" variant="ghost" disabled={pending} onClick={logout}>Sign out</Button>
           </div>
         </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-1 bg-base-900 border border-white/[0.06] rounded-xl p-1 mb-6 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-                tab === t.id
-                  ? 'bg-primary text-white'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-              }`}
-            >
-              {t.label}
-            </button>
+        <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
+          {[
+            ['Playable words', wordCount],
+            ['Categories with words', playableCategories.length],
+            ['Difficulty levels', levels.length]
+          ].map(([label, value]) => (
+            <div className="rounded-2xl border border-white/10 bg-base-950/40 p-3 sm:p-4" key={label}>
+              <p className="text-xl font-bold tabular-nums text-white sm:text-3xl">{categoryRequest.data ? value.toLocaleString() : '—'}</p>
+              <p className="mt-1 text-xs leading-tight text-slate-400 sm:text-sm">{label}</p>
+            </div>
           ))}
         </div>
+      </section>
 
-        <AnimatePresence mode="wait">
-          {tab === 'words' && (
-            <motion.div
-              key="words"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15 }}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <nav aria-label="Admin sections" className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-white/10 bg-base-900 p-1">
+          {TABS.filter((item) => !item.headOnly || admin.isHeadAdmin).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-current={tab === item.id ? 'page' : undefined}
+              onClick={() => selectTab(item.id)}
+              className={'whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:px-4 ' + (tab === item.id ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}
             >
-              <Card className="p-5">
-                <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-200">Words</h2>
-                  <Button size="sm" onClick={() => { setEditingWord(null); setWordForm({ word: '', category: '', difficulty: 'medium' }); setShowWordForm(true); }}>
-                    + Add Word
-                  </Button>
-                </div>
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <input
-                    type="text"
-                    placeholder="Search words..."
-                    value={wordFilter.search}
-                    onChange={(e) => { setWordFilter((f) => ({ ...f, search: e.target.value })); setWordPage(1); }}
-                    className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                  <select
-                    value={wordFilter.difficulty}
-                    onChange={(e) => { setWordFilter((f) => ({ ...f, difficulty: e.target.value })); setWordPage(1); }}
-                    className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
-                  >
-                    <option value="">All difficulties</option>
-                    {FILTER_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                  <select
-                    value={wordFilter.category}
-                    onChange={(e) => { setWordFilter((f) => ({ ...f, category: e.target.value })); setWordPage(1); }}
-                    className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
-                  >
-                    <option value="">All categories</option>
-                    {categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}
-                  </select>
-                </div>
-
-                {showWordForm && (
-                  <form onSubmit={handleSaveWord} className="bg-base-900 border border-white/[0.06] rounded-xl p-4 mb-4 space-y-3">
-                    <h3 className="text-sm font-bold text-slate-300">{editingWord ? 'Edit Word' : 'New Word'}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Word"
-                        value={wordForm.word}
-                        onChange={(e) => setWordForm((f) => ({ ...f, word: e.target.value }))}
-                        required
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-                      />
-                      <select
-                        value={wordForm.category}
-                        onChange={(e) => setWordForm((f) => ({ ...f, category: e.target.value }))}
-                        required
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
-                      >
-                        <option value="">Select category...</option>
-                        {categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}
-                      </select>
-                      <select
-                        value={wordForm.difficulty}
-                        onChange={(e) => setWordForm((f) => ({ ...f, difficulty: e.target.value }))}
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none"
-                      >
-                        {WORD_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" type="submit">Save</Button>
-                      <Button variant="outline" size="sm" onClick={() => setShowWordForm(false)}>Cancel</Button>
-                    </div>
-                  </form>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-slate-500 uppercase border-b border-white/[0.06]">
-                      <tr>
-                        <th className="px-3 py-2">Word</th>
-                        <th className="px-3 py-2">Category</th>
-                        <th className="px-3 py-2">Difficulty</th>
-                        <th className="px-3 py-2 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {words.map((w) => (
-                        <tr key={w._id || w.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                          <td className="px-3 py-2 text-slate-300 font-medium">{w.word}</td>
-                          <td className="px-3 py-2 text-slate-400">{w.category || '—'}</td>
-                          <td className="px-3 py-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              w.difficulty === 'easy' ? 'bg-emerald-500/10 text-emerald-300' :
-                              w.difficulty === 'hard' ? 'bg-rose-500/10 text-rose-300' :
-                              'bg-amber-500/10 text-amber-300'
-                            }`}>{w.difficulty}</span>
-                          </td>
-                          <td className="px-3 py-2 text-right space-x-2">
-                            <button
-                              onClick={() => { setEditingWord(w); setWordForm({ word: w.word, category: w.category, difficulty: w.difficulty }); setShowWordForm(true); }}
-                              className="text-primary hover:underline text-xs"
-                            >Edit</button>
-                            <button
-                              onClick={() => handleDeleteWord(w._id || w.id)}
-                              className="text-rose-400 hover:underline text-xs"
-                            >Delete</button>
-                          </td>
-                        </tr>
-                      ))}
-                      {!words.length && (
-                        <tr><td colSpan={4} className="px-3 py-6 text-center text-slate-500">No words found.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-2 mt-4">
-                    <Button size="sm" variant="outline" disabled={wordPage <= 1} onClick={() => setWordPage((p) => Math.max(1, p - 1))}>Prev</Button>
-                    <span className="text-sm text-slate-400">Page {wordPage} of {totalPages}</span>
-                    <Button size="sm" variant="outline" disabled={wordPage >= totalPages} onClick={() => setWordPage((p) => Math.min(totalPages, p + 1))}>Next</Button>
-                  </div>
-                )}
-              </Card>
-            </motion.div>
-          )}
-
-          {tab === 'categories' && (
-            <motion.div
-              key="categories"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Card className="p-5">
-                <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-200">Categories</h2>
-                  <Button size="sm" onClick={() => { setEditingCat(null); setCatForm({ name: '', description: '', icon: '' }); setShowCatForm(true); }}>
-                    + Add Category
-                  </Button>
-                </div>
-
-                {showCatForm && (
-                  <form onSubmit={handleSaveCat} className="bg-base-900 border border-white/[0.06] rounded-xl p-4 mb-4 space-y-3">
-                    <h3 className="text-sm font-bold text-slate-300">{editingCat ? 'Edit Category' : 'New Category'}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Name"
-                        value={catForm.name}
-                        onChange={(e) => setCatForm((f) => ({ ...f, name: e.target.value }))}
-                        required
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Icon (emoji)"
-                        value={catForm.icon}
-                        onChange={(e) => setCatForm((f) => ({ ...f, icon: e.target.value }))}
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Description"
-                        value={catForm.description}
-                        onChange={(e) => setCatForm((f) => ({ ...f, description: e.target.value }))}
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none sm:col-span-2"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" type="submit">Save</Button>
-                      <Button variant="outline" size="sm" onClick={() => setShowCatForm(false)}>Cancel</Button>
-                    </div>
-                  </form>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {categories.map((c) => (
-                    <div key={c.id} className="bg-base-900 border border-white/[0.06] rounded-xl p-4 hover:border-white/[0.12] transition">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{c.icon || '📦'}</span>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-200">{c.name}</h3>
-                            <p className="text-xs text-slate-500">{c.description || 'No description'}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{c.wordCount || 0} words</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', icon: c.icon || '' }); setShowCatForm(true); }} className="text-primary hover:underline text-xs">Edit</button>
-                          <button onClick={() => handleDeleteCat(c.id)} className="text-rose-400 hover:underline text-xs">Delete</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {!categories.length && (
-                    <div className="col-span-full text-center text-slate-500 py-8">No categories found.</div>
-                  )}
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {tab === 'admins' && (
-            <motion.div
-              key="admins"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Card className="p-5">
-                <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-200">Admins</h2>
-                  {isHead && (
-                    <Button size="sm" onClick={() => { setAdminForm({ email: '', password: '' }); setShowAdminForm(true); }}>
-                      + Add Admin
-                    </Button>
-                  )}
-                </div>
-
-                {showAdminForm && (
-                  <form onSubmit={handleCreateAdmin} className="bg-base-900 border border-white/[0.06] rounded-xl p-4 mb-4 space-y-3">
-                    <h3 className="text-sm font-bold text-slate-300">New Admin</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <input
-                        type="email"
-                        placeholder="Email"
-                        value={adminForm.email}
-                        onChange={(e) => setAdminForm((f) => ({ ...f, email: e.target.value }))}
-                        required
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-                      />
-                      <input
-                        type="password"
-                        placeholder="Password"
-                        value={adminForm.password}
-                        onChange={(e) => setAdminForm((f) => ({ ...f, password: e.target.value }))}
-                        required
-                        className="bg-base-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" type="submit">Create</Button>
-                      <Button variant="outline" size="sm" onClick={() => setShowAdminForm(false)}>Cancel</Button>
-                    </div>
-                  </form>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-slate-500 uppercase border-b border-white/[0.06]">
-                      <tr>
-                        <th className="px-3 py-2">Email</th>
-                        <th className="px-3 py-2">Role</th>
-                        <th className="px-3 py-2">Created</th>
-                        <th className="px-3 py-2 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {admins.map((a) => (
-                        <tr key={a._id || a.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                          <td className="px-3 py-2 text-slate-300">{a.email}</td>
-                          <td className="px-3 py-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              a.role === 'head' || a.isHeadAdmin ? 'bg-amber-500/10 text-amber-300' : 'bg-slate-500/10 text-slate-300'
-                            }`}>{a.isHeadAdmin ? 'head' : a.role || 'admin'}</span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-500 text-xs">{a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—'}</td>
-                          <td className="px-3 py-2 text-right">
-                            {isHead && !a.isHeadAdmin && (
-                              <button onClick={() => handleDeleteAdmin(a._id || a.id)} className="text-rose-400 hover:underline text-xs">Delete</button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {!admins.length && (
-                        <tr><td colSpan={4} className="px-3 py-6 text-center text-slate-500">No admins found.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="flex items-center gap-2 text-xs text-slate-300" role="status">
+            <span aria-hidden="true" className={'h-2 w-2 rounded-full ' + (connected ? 'bg-emerald-400' : 'bg-amber-400')} />
+            {connected ? 'Live updates connected' : 'Refreshing every 15 seconds'}
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => refresh()}>Refresh</Button>
+        </div>
       </div>
+
+      {passwordForm && (
+        <Card className="p-4 sm:p-5">
+          <form onSubmit={changePassword} className="space-y-4">
+            <h2 className="font-semibold text-slate-100">Change password</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Current password">
+                <input type="password" autoComplete="current-password" className={inputClass} required value={passwordForm.currentPassword} onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })} />
+              </Field>
+              <Field label="New password">
+                <input type="password" autoComplete="new-password" className={inputClass} required minLength={12} maxLength={72} value={passwordForm.password} onChange={(event) => setPasswordForm({ ...passwordForm, password: event.target.value })} />
+              </Field>
+            </div>
+            <p className="text-xs text-slate-400">Use at least 12 characters. You’ll sign in again after saving.</p>
+            <FormActions pending={pending} onCancel={() => setPasswordForm(null)} />
+          </form>
+        </Card>
+      )}
+
+      {notice && (
+        <div className={'rounded-xl border px-4 py-3 text-sm ' + (notice.error ? 'border-rose-400/25 bg-rose-500/10 text-rose-200' : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200')} role={notice.error ? 'alert' : 'status'}>
+          {notice.message}
+        </div>
+      )}
+
+      {tab !== 'categories' && categoryRequest.error && <PanelStatus request={categoryRequest} onRetry={() => refresh('catalog')} />}
+
+      <Card className="p-4 sm:p-6">
+        {tab === 'words' && <WordsPanel {...panelProps} categories={categories} revision={versions.catalog} initialCategory={initialCategory} />}
+        {tab === 'categories' && <CategoriesPanel {...panelProps} categories={categories} request={categoryRequest} viewWords={viewWords} />}
+        {tab === 'matches' && admin.isHeadAdmin && <MatchesPanel {...panelProps} categories={categories} revision={versions.matches} />}
+        {tab === 'admins' && admin.isHeadAdmin && <AccountsPanel {...panelProps} revision={versions.admins} />}
+      </Card>
     </main>
   );
 }
-

@@ -1,7 +1,25 @@
 const mongoose = require('mongoose');
 
+const playerSchema = new mongoose.Schema({
+  playerId: { type: String, required: true },
+  username: { type: String, required: true },
+  teamId: { type: String, required: true },
+  sessionHash: String,
+  isHost: Boolean,
+  isActor: Boolean,
+  connected: Boolean,
+  disconnectedAt: Number
+}, { _id: false });
+
+const teamSchema = new mongoose.Schema({
+  teamId: { type: String, required: true },
+  name: { type: String, required: true },
+  score: Number,
+  players: [String]
+}, { _id: false });
+
 const gameSchema = new mongoose.Schema({
-  gameCode: { type: String, required: true, unique: true, index: true },
+  gameCode: { type: String, required: true, unique: true },
   hostId: String,
   hostName: String,
   status: { type: String, enum: ['lobby', 'playing', 'round_end', 'finished'], default: 'lobby' },
@@ -13,6 +31,12 @@ const gameSchema = new mongoose.Schema({
   targetScore: { type: Number, default: 10 },
   roundTime: { type: Number, default: 60 },
   currentRound: { type: Number, default: 0 },
+  matchId: String,
+  matchStartedAt: Number,
+  roundId: String,
+  roundStartedAt: Number,
+  roundEndsAt: Number,
+  nextRoundAt: Number,
   currentTeam: String,
   currentActorId: String,
   currentWord: String,
@@ -21,8 +45,11 @@ const gameSchema = new mongoose.Schema({
   wordCursor: { type: Number, default: 0 },
   teamActorCursor: { type: Object, default: {} },
   scores: { type: Map, of: Number, default: {} },
-  teams: [{ type: String }], // UUID strings
-  players: [{ type: String }], // UUID strings
+  teams: [String],
+  players: [String],
+  runtimePlayers: { type: [playerSchema], default: undefined },
+  runtimeTeams: { type: [teamSchema], default: undefined },
+  closedAt: { type: Date, default: null },
   words: [String],
   bannedPlayers: [{
     playerId: String,
@@ -42,8 +69,38 @@ const gameSchema = new mongoose.Schema({
     reason: String,
     word: String,
     actorId: String,
-    actorName: String
-  }
-}, { timestamps: true });
+    actorName: String,
+    score: Number,
+    guessingPlayerName: String
+  },
+  roundHistory: [{
+    _id: false,
+    matchId: String,
+    roundId: String,
+    roundNumber: Number,
+    teamId: String,
+    actorId: String,
+    actorName: String,
+    reason: String,
+    word: String,
+    score: Number,
+    guessingPlayerName: String,
+    startedAt: Number,
+    endedAt: Number
+  }],
+  matchHistory: [{
+    _id: false,
+    matchId: String,
+    startedAt: Number,
+    endedAt: Number,
+    rounds: Number,
+    reason: String,
+    winner: String,
+    scores: { type: Map, of: Number }
+  }]
+}, { timestamps: true, bufferCommands: false });
+
+gameSchema.index({ visibility: 1, status: 1, closedAt: 1, updatedAt: -1 });
+gameSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model('Game', gameSchema);

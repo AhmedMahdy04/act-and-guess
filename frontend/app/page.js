@@ -2,28 +2,26 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import Logo from '../components/Logo';
-import { useGameStore } from './store';
+import { normalizeRoomCode, ROOM_CODE_LENGTH, useGameStore } from './store';
 
 export default function Home() {
   const router = useRouter();
   const [joinCode, setJoinCode] = useState('');
-  const { fetchPublicGames, publicGames, lastError, clearError } = useGameStore();
+  const { fetchPublicGames, publicGames, publicGamesStatus, gameId, status, lastError, clearError } = useGameStore();
 
   useEffect(() => {
-    fetchPublicGames().catch(() => {});
+    fetchPublicGames();
   }, [fetchPublicGames]);
 
-  const normalized = joinCode.trim().toUpperCase();
-  const canJoin = normalized.length > 0;
+  const canJoin = Boolean(joinCode);
+  const roomPath = status === 'finished' ? '/results' : status === 'lobby' ? '/lobby' : '/game';
 
-  const handleCreate = () => router.push('/create');
-
-  const handleJoin = (gameId = normalized) => {
+  const handleJoin = (gameId = joinCode) => {
     if (!gameId) return;
     clearError();
     router.push(`/join?id=${encodeURIComponent(gameId)}`);
@@ -40,59 +38,59 @@ export default function Home() {
           className="w-full max-w-5xl"
         >
           <div className="text-center mb-12 sm:mb-16">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-              className="inline-flex flex-col items-center gap-6"
-            >
-              <Logo size="xl" />
-              <p className="text-lg sm:text-xl text-slate-400 max-w-lg mx-auto leading-relaxed">
-                Create a room, invite your friends, and take turns acting out words while your team guesses. The first team to reach the target score wins!
-              </p>
-            </motion.div>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Live multiplayer party game</p>
+            <h1 className="mx-auto max-w-3xl text-balance text-4xl font-black tracking-tight text-slate-50 sm:text-6xl">
+              Act it out. <span className="text-indigo-300">Beat the clock.</span>
+            </h1>
+            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
+              Invite your friends, split into teams, and take turns acting out secret words. The first team to reach the target score wins.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-6">
             {/* Main actions */}
             <Card className="p-6 sm:p-10">
               <div className="space-y-6">
-                <Button onClick={handleCreate} size="xl" className="w-full justify-center">
-                  <span className="text-2xl mr-2">🎭</span>
-                  Host New Game
-                </Button>
-
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-white/[0.06]" />
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="bg-base-900 px-4 text-slate-500">or join with a code</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <input
-                    value={joinCode}
-                    onChange={(event) => setJoinCode(event.target.value)}
-                    placeholder="Enter room code"
-                    className="flex-1 bg-base-800 border border-white/[0.08] rounded-xl px-5 py-4 text-lg font-semibold placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 text-center tracking-widest uppercase"
-                    inputMode="text"
-                    maxLength={8}
-                  />
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleJoin()}
-                    disabled={!canJoin}
-                    size="lg"
-                    className="px-8"
-                  >
-                    Join
+                {gameId ? (
+                  <Button onClick={() => router.push(roomPath)} size="lg" className="w-full">
+                    Return to room {gameId}
                   </Button>
-                </div>
+                ) : (
+                  <>
+                    <Button onClick={() => router.push('/create')} size="lg" className="w-full">
+                      <span className="text-xl" aria-hidden="true">🎭</span>
+                      Host a new game
+                    </Button>
+
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-white/[0.06]" />
+                      </div>
+                      <div className="relative flex justify-center text-sm">
+                        <span className="bg-base-900 px-4 text-slate-300">or join with a code</span>
+                      </div>
+                    </div>
+
+                    <form className="flex flex-col gap-3 sm:flex-row" onSubmit={(event) => { event.preventDefault(); if (canJoin) handleJoin(); }}>
+                      <input
+                        value={joinCode}
+                        onChange={(event) => setJoinCode(normalizeRoomCode(event.target.value))}
+                        aria-label="Room code"
+                        placeholder="ABC123"
+                        className="min-w-0 flex-1 bg-base-800 border border-white/10 rounded-xl px-5 py-4 text-lg font-semibold placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/50 text-center tracking-widest uppercase"
+                        inputMode="text"
+                        autoCapitalize="characters"
+                        autoComplete="off"
+                        spellCheck={false}
+                        maxLength={ROOM_CODE_LENGTH}
+                      />
+                      <Button variant="secondary" type="submit" disabled={!canJoin} size="lg">Find room</Button>
+                    </form>
+                  </>
+                )}
 
                 {lastError && (
-                  <div className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
+                  <div role="alert" className="text-center text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3 text-sm">
                     {lastError}
                   </div>
                 )}
@@ -104,18 +102,20 @@ export default function Home() {
               <div className="flex items-center justify-between gap-3 mb-5">
                 <div>
                   <h2 className="text-xl font-bold text-slate-200">Public Lobbies</h2>
-                  <p className="text-sm text-slate-500 mt-0.5">Join an open game</p>
+                  <p className="text-sm text-slate-400 mt-0.5">Join an open game</p>
                 </div>
                 <Button
                   variant="ghost"
-                  onClick={() => fetchPublicGames().catch(() => {})}
+                  onClick={fetchPublicGames}
+                  disabled={publicGamesStatus === 'loading'}
                   size="sm"
                 >
-                  Refresh
+                  {publicGamesStatus === 'loading' ? 'Refreshing…' : 'Refresh'}
                 </Button>
               </div>
 
-              <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+              {publicGamesStatus === 'error' && <p role="status" className="mb-3 text-sm text-rose-200">Could not load public lobbies. Try refreshing.</p>}
+              <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1" aria-busy={publicGamesStatus === 'loading'}>
                 {publicGames.length ? publicGames.map((game) => (
                   <div
                     key={game.id}
@@ -140,18 +140,19 @@ export default function Home() {
 
                     <Button
                       onClick={() => handleJoin(game.id)}
+                      disabled={Boolean(gameId) || game.currentPlayerCount >= game.maxPlayers}
                       size="sm"
                       className="w-full justify-center"
                     >
-                      Join Lobby
+                      {game.currentPlayerCount >= game.maxPlayers ? 'Lobby full' : 'Join lobby'}
                     </Button>
                   </div>
-                )) : (
+                )) : publicGamesStatus === 'ready' ? (
                   <div className="rounded-xl border border-dashed border-white/[0.06] bg-base-800/30 p-8 text-center">
-                    <p className="text-slate-500 text-sm">No public lobbies open right now.</p>
-                    <p className="text-slate-600 text-xs mt-1">Be the first to host one!</p>
+                    <p className="text-slate-300 text-sm">No public lobbies are open right now.</p>
+                    <p className="text-slate-400 text-xs mt-1">Be the first to host one.</p>
                   </div>
-                )}
+                ) : null}
               </div>
             </Card>
           </div>
@@ -171,7 +172,7 @@ export default function Home() {
             <StepCard
               step="2"
               title="Act It Out"
-              desc="One player from each team sees a secret word and acts it out without speaking."
+              desc="Teams take turns. Each round, one actor sees a secret word and acts it out without speaking."
             />
             <StepCard
               step="3"
@@ -184,12 +185,10 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="py-6 border-t border-white/[0.04] text-center">
-        <button
-          onClick={() => router.push('/admin/login')}
-          className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
-        >
-          Admin Portal
-        </button>
+        <div className="flex justify-center gap-5 text-sm text-slate-400">
+          <Link href="/privacy" className="hover:text-slate-200">Privacy</Link>
+          <Link href="/admin/login" className="hover:text-slate-200">Admin portal</Link>
+        </div>
       </footer>
     </main>
   );

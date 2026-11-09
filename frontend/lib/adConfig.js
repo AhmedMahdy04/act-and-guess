@@ -1,20 +1,36 @@
-// Adsterra ad configuration
-// Replace these with your real Adsterra codes when ready
+export const ADS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ADS === 'true';
+export const AD_IFRAME_DOCUMENT = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Advertisement</title></head><body>
+<div id="container-a8c0c7f957a38d8b30939e74be60d4e2"></div>
+<script async data-cfasync="false" src="https://pl29241156.profitablecpmratenetwork.com/a8c0c7f957a38d8b30939e74be60d4e2/invoke.js"></script>
+</body></html>`;
 
-export const AD_SLOTS = {
-  // NOTE: Footer popunder removed — click-triggered ads break gameplay.
-  // Only static display ads are used, placed in non-intrusive areas.
+const PREFERENCE_KEY = 'guess_game_ads_preference';
+let pagePreference = null;
 
-  // Large native / display ad — used on results, lobby, between rounds
-  large: {
-    scripts: [
-      'https://pl29241156.profitablecpmratenetwork.com/a8c0c7f957a38d8b30939e74be60d4e2/invoke.js'
-    ],
-    html: '<div id="container-a8c0c7f957a38d8b30939e74be60d4e2"></div>',
-    label: 'large-display'
+export function getAdPreference() {
+  try {
+    return window.localStorage.getItem(PREFERENCE_KEY);
+  } catch {
+    return pagePreference;
   }
-};
+}
 
-// Feature flag — set to false to hide all ads instantly
-export const ADS_ENABLED = true;
+export function saveAdPreference(preference) {
+  pagePreference = preference;
+  try {
+    window.localStorage.setItem(PREFERENCE_KEY, preference);
+  } catch {
+    // Use this page's choice if the browser blocks storage.
+  }
+  window.dispatchEvent(new Event(PREFERENCE_KEY));
+}
 
+export function subscribeToAdPreference(listener) {
+  window.addEventListener(PREFERENCE_KEY, listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    window.removeEventListener(PREFERENCE_KEY, listener);
+    window.removeEventListener('storage', listener);
+  };
+}

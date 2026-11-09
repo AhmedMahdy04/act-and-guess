@@ -1,142 +1,83 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { useGameStore } from '../store';
+import RoomUnavailable from '../../components/RoomUnavailable';
 import Scoreboard from '../../components/Scoreboard';
 import AdBanner from '../../components/AdBanner';
-import { AD_SLOTS } from '../../lib/adConfig';
-import { useRouter } from 'next/navigation';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Logo from '../../components/Logo';
 
 export default function Results() {
-  const [starting, setStarting] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const { game, winner, startGame, isHost, resetGame, returnToLobby, leaveGame } = useGameStore();
+  const [pending, setPending] = useState('');
+  const { game, winner, isHost, lastError, connectionStatus, sessionStatus, startGame, returnToLobby, leaveGame, closeGame } = useGameStore();
   const router = useRouter();
 
-  if (!winner) {
-    return (
-      <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-8">
-        <Card className="p-8 sm:p-12 text-center max-w-md">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary text-3xl flex items-center justify-center mx-auto mb-5">
-            🏆
-          </div>
-          <h1 className="text-2xl font-bold text-slate-200 mb-2">Game Complete!</h1>
-          <p className="text-slate-500 text-sm">Fetching final scoreboard...</p>
-        </Card>
-      </main>
-    );
+  if (!game || game.status !== 'finished') return <RoomUnavailable title="No completed game" />;
+
+  const winnerTeam = game.teams[winner];
+  const online = connectionStatus === 'online' && sessionStatus === 'ready';
+  const canRematch = Object.values(game.teams).filter((team) => (
+    team.players.filter((playerId) => game.players[playerId]?.connected).length >= 2
+  )).length >= 2;
+
+  async function act(name, action) {
+    if (pending || !online) return;
+    setPending(name);
+    try {
+      await action();
+    } catch {
+      // Keep the results open so the player can see and retry the failed action.
+    } finally {
+      setPending('');
+    }
   }
 
-  const winnerName = winner.replace('team', 'Team ');
-  const winnerTeam = game?.teams?.[winner];
-
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-8 max-w-4xl mx-auto">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="text-center mb-10 sm:mb-12"
-      >
-        <div className="inline-flex flex-col items-center">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-            className="text-6xl sm:text-7xl mb-4"
-          >
-            🎉
-          </motion.div>
-          <h1 className="text-3xl sm:text-5xl font-bold text-slate-100 mb-2">
-            {winnerName} Wins!
-          </h1>
-          {winnerTeam && (
-            <p className="text-slate-500 text-sm mb-6">
-              Final score: <span className="font-bold text-slate-300">{winnerTeam.score}</span> points
-            </p>
-          )}
-        </div>
-      </motion.div>
+    <main className="mx-auto min-h-[calc(100dvh-4rem)] max-w-4xl space-y-6 px-4 py-8 sm:px-8 sm:py-12">
+      <Card className="border-indigo-400/20 bg-indigo-500/5 p-6 text-center sm:p-10">
+        <p className="mb-3 text-5xl" aria-hidden="true">🏆</p>
+        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-indigo-300">Game complete</p>
+        <h1 className="text-balance text-3xl font-black text-slate-100 sm:text-5xl">
+          {winnerTeam ? `${winnerTeam.name} wins!` : 'Final results'}
+        </h1>
+        {winnerTeam && <p className="mt-3 text-slate-300">{winnerTeam.score} points · {game.currentRound} {game.currentRound === 1 ? 'round' : 'rounds'}</p>}
+      </Card>
 
-      {/* Big post-game ad */}
-      <div className="my-8 sm:my-10 flex justify-center">
-        <AdBanner
-          scripts={AD_SLOTS.large.scripts}
-          html={AD_SLOTS.large.html}
-          className="w-full flex justify-center"
-        />
-      </div>
+      <Scoreboard teams={game.teams} targetScore={game.targetScore} final />
 
-      <Scoreboard teams={game?.teams || {}} />
-
-      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mt-10 sm:mt-12">
-        <Button
-          variant="secondary"
-          onClick={() => {
-            resetGame({ cleanupRemote: isHost });
-            router.push('/');
-          }}
-          size="lg"
-          className="flex-1 justify-center max-w-xs mx-auto"
-        >
-          New Game
-        </Button>
-        <Button
-          variant="outline"
-          onClick={async () => {
-            try { await leaveGame(game.id); } catch { window.location.href = '/'; }
-          }}
-          size="lg"
-          className="flex-1 justify-center max-w-xs mx-auto"
-        >
-          Leave Game
-        </Button>
+      {lastError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{lastError}</p>}
+      <div className="flex flex-col flex-wrap justify-center gap-3 sm:flex-row">
         {isHost && (
           <>
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                setEditing(true);
-                try {
-                  await returnToLobby(game.id);
-                  router.push('/lobby');
-                } catch (error) {
-                  console.error(error);
-                } finally {
-                  setEditing(false);
-                }
-              }}
-              disabled={editing}
-              size="lg"
-              className="flex-1 justify-center max-w-xs mx-auto"
-            >
-              {editing ? 'Opening...' : 'Edit Settings'}
+            <Button disabled={Boolean(pending) || !online || !canRematch} onClick={() => act('rematch', () => startGame(game.id))}>
+              {pending === 'rematch' ? 'Starting…' : 'Play again'}
             </Button>
-            <Button
-              onClick={async () => {
-                setStarting(true);
-                try {
-                  await startGame(game.id);
-                } catch (error) {
-                  console.error(error);
-                } finally {
-                  setStarting(false);
-                }
-              }}
-              disabled={starting}
-              size="lg"
-              className="flex-1 justify-center max-w-xs mx-auto"
-            >
-              {starting ? 'Starting...' : 'Play Again'}
+            <Button variant="secondary" disabled={Boolean(pending) || !online} onClick={() => act('lobby', () => returnToLobby(game.id))}>
+              {pending === 'lobby' ? 'Opening…' : 'Return to lobby'}
             </Button>
           </>
         )}
+        <Button variant="ghost" disabled={Boolean(pending) || !online} onClick={() => act('leave', async () => {
+          await leaveGame(game.id);
+          router.push('/');
+        })}>
+          {pending === 'leave' ? 'Leaving…' : 'Leave game'}
+        </Button>
       </div>
+      {isHost && !canRematch && <p className="text-center text-sm text-slate-300">Return to the lobby to get two teams ready for a rematch.</p>}
+      {!isHost && <p className="text-center text-sm text-slate-300">Stay here to play again when the host starts another game.</p>}
+      {isHost && (
+        <div className="text-center">
+          <Button variant="ghost" size="sm" disabled={Boolean(pending) || !online} onClick={() => {
+            if (window.confirm('Close this room for everyone?')) act('close', async () => { await closeGame(game.id); router.push('/'); });
+          }}>
+            {pending === 'close' ? 'Closing…' : 'Close room for everyone'}
+          </Button>
+        </div>
+      )}
+      <AdBanner />
     </main>
   );
 }
-

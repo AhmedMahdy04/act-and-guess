@@ -9,51 +9,33 @@ const teamColors = {
   team6: 'border-pink-500/20 bg-pink-500/5',
 };
 
-const teamScoreColors = {
-  team1: 'bg-red-500',
-  team2: 'bg-blue-500',
-  team3: 'bg-amber-500',
-  team4: 'bg-emerald-500',
-  team5: 'bg-purple-500',
-  team6: 'bg-pink-500',
-};
-
 export default function TeamList({ teams, players, maxPlayersPerTeam }) {
   return (
     <div className="space-y-4">
-      {Object.entries(teams).map(([teamId, team]) => (
-        <div
-          key={teamId}
-          className={`rounded-2xl p-5 sm:p-6 border ${teamColors[teamId] || teamColors.team1}`}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-slate-200">{team.name}</h3>
-            <span className={`px-3 py-1 rounded-lg text-sm font-bold text-white ${teamScoreColors[teamId] || teamScoreColors.team1}`}>
-              {team.score || 0}
-            </span>
-          </div>
+      {Object.entries(teams).map(([teamId, team]) => {
+        const connected = team.players.filter((playerId) => players[playerId]?.connected).length;
+        return (
+          <section
+            key={teamId}
+            className={`rounded-2xl p-4 sm:p-6 border ${teamColors[teamId] || teamColors.team1}`}
+          >
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold text-slate-100">{team.name}</h2>
+              <span className="rounded-lg border border-white/10 bg-base-900/80 px-2.5 py-1 text-xs font-semibold text-slate-200">
+                {connected >= 2 ? 'Ready' : 'Waiting'} · {team.players.length}/{maxPlayersPerTeam} spots
+              </span>
+            </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
-            {team.players?.map((playerId) => (
-              players[playerId] ? (
-                <PlayerAvatar key={playerId} player={players[playerId]} />
-              ) : null
-            ))}
-            {Array.from({
-              length: Math.max(0, maxPlayersPerTeam - (team.players?.length || 0)),
-            }).map((_, i) => (
-              <div
-                key={`empty-${i}`}
-                className="aspect-square bg-white/[0.02] rounded-xl border border-dashed border-white/[0.06]"
-              />
-            ))}
-          </div>
-
-          <p className="text-center mt-3 text-xs font-medium text-slate-500">
-            {team.players?.length || 0}/{maxPlayersPerTeam} players
-          </p>
-        </div>
-      ))}
+            {team.players.length ? (
+              <ul className="grid grid-cols-2 gap-2 min-[375px]:grid-cols-3 sm:grid-cols-4">
+                {team.players.map((playerId) => players[playerId] && (
+                  <li key={playerId}><PlayerAvatar player={players[playerId]} /></li>
+                ))}
+              </ul>
+            ) : <p className="text-sm text-slate-300">This team has open spots.</p>}
+          </section>
+        );
+      })}
     </div>
   );
 }
