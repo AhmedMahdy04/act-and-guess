@@ -59,6 +59,7 @@ async function saveGame(game, { create = false, previous } = {}) {
 
 async function listPublicGames() {
   return Game.find({
+    testOwner: { $exists: false },
     visibility: 'public',
     status: 'lobby',
     closedAt: null,

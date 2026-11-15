@@ -72,7 +72,7 @@ export default function Lobby() {
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-widest text-indigo-300">Room <code className="ml-1 text-sm text-indigo-200">{gameId}</code></p>
           <h1 className="text-3xl font-black text-slate-100 sm:text-4xl">Game lobby</h1>
-          <p className="mt-2 text-sm text-slate-300">Share the room code, then get your teams ready.</p>
+          <p className="mt-2 text-sm text-slate-300">{game.testRoom ? 'Test room · Get two teams ready to start.' : 'Share the room code, then get your teams ready.'}</p>
         </div>
         <Button
           variant="ghost"
@@ -164,7 +164,7 @@ export default function Lobby() {
         </div>
 
         <div className="space-y-5">
-          <InviteCard gameId={gameId} joinLink={joinLink} />
+          {!game.testRoom && <InviteCard gameId={gameId} joinLink={joinLink} />}
 
           {isHost && inLobby && (
             <Card className="p-5 sm:p-6">
@@ -173,6 +173,7 @@ export default function Lobby() {
               <SettingsForm
                 key={`${gameId}-${Object.values(settings).join('-')}`}
                 settings={settings}
+                privateOnly={game.testRoom}
                 catalog={wordCatalog}
                 catalogStatus={catalogStatus}
                 disabled={!canAct}
@@ -188,7 +189,7 @@ export default function Lobby() {
   );
 }
 
-function SettingsForm({ settings, catalog, catalogStatus, disabled, saving, onSave }) {
+function SettingsForm({ settings, privateOnly, catalog, catalogStatus, disabled, saving, onSave }) {
   const [draft, setDraft] = useState(settings);
   const changed = Object.keys(settings).some((key) => settings[key] !== draft[key]);
   const canSave = changed && !disabled && !getSettingsProblem(draft, catalog);
@@ -198,6 +199,7 @@ function SettingsForm({ settings, catalog, catalogStatus, disabled, saving, onSa
       <fieldset disabled={disabled} className="space-y-4">
         <GameSettingsFields
           settings={draft}
+          privateOnly={privateOnly}
           catalog={catalog}
           catalogStatus={catalogStatus}
           onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}

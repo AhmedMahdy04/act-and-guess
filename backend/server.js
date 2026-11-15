@@ -12,11 +12,14 @@ const wordService = require('./services/wordService');
 const adminService = require('./services/adminService');
 const { registerAdminEvents, notifyMatchChanged } = require('./services/adminEvents');
 const adminRoutes = require('./routes/admin');
+const { adminAuth } = require('./middleware/adminAuth');
+const siteSettings = require('./services/siteSettings');
 
 const hosted = Boolean(process.env.VERCEL);
 const PRESENCE_INTERVAL_MS = 12000;
 const PRESENCE_TIMEOUT_MS = 45000;
 const SYNC_INTERVAL_MS = 1200;
+const TEST_ROOM_DURATION_MS = 2 * 60 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 20000;
 const ROUND_BREAK_MS = 2500;
 const ROUND_HISTORY_LIMIT = 500;
@@ -70,10 +73,48 @@ app.use((req, res, next) => {
   next();
 });
 
+app.delete('/api/admin/test-rooms/:id', adminAuth, async (req, res) => {
+  try {
+    const id = normalizeGameId(req.params.id);
+    await queueGameAction(id, async () => {
+      for (let attempt = 0; ; attempt += 1) {
+        const game = await loadGame(id);
+        if (!game || game.testOwner !== req.admin.id) return;
+        const next = structuredClone(game);
+        closeGame(next, 'closed');
+        try {
+          await commitGame(next);
+          for (const player of Object.values(game.players)) {
+            clearDisconnect(id, player.id);
+            releaseSession(player.socketId, id, 'closed');
+          }
+          return;
+        } catch (error) {
+          if (error.code !== 'GAME_CONFLICT' || attempt >= 4) throw error;
+        }
+      }
+    });
+    res.status(204).end();
+  } catch (error) {
+    if (error instanceof RequestError) return res.status(400).json({ error: error.message });
+    console.error('Could not close test room:', error.name);
+    res.status(503).json({ error: 'Could not close this test room. Try again.' });
+  }
+});
+
 app.use('/api/admin', adminRoutes);
 
 app.get('/', (_req, res) => {
   res.json({ message: 'Act & Guess Game Backend', dbConnected: gameService.isDbReady() });
+});
+
+app.get('/api/site-settings', async (_req, res, next) => {
+  try {
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
+    res.json(await siteSettings.getSettings());
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get('/health', (_req, res) => {
@@ -232,6 +273,7 @@ function serializeGame(game, viewerId) {
   return {
     id: game.id,
     gameId: game.id,
+    testRoom: Boolean(game.testOwner),
     hostId: game.hostId,
     hostName: game.hostName,
     status: game.status,
@@ -334,11 +376,14 @@ function queueGameAction(gameId, action) {
 }
 
 async function loadGame(id) {
-  if (!hosted && games.has(id)) return games.get(id);
+  if (!hosted && games.has(id)) {
+    const game = games.get(id);
+    return game.testExpiresAt && Number(game.testExpiresAt) <= Date.now() ? null : game;
+  }
   if (!dbConnected) return null;
 
   const saved = await gameService.getGameByCode(id);
-  if (!saved) return null;
+  if (!saved || (saved.testExpiresAt && Number(saved.testExpiresAt) <= Date.now())) return null;
 
   const now = Date.now();
   const config = normalizeConfig(saved);
@@ -376,6 +421,8 @@ async function loadGame(id) {
     ...config,
     id,
     revision: saved.revision,
+    testOwner: saved.testOwner,
+    testExpiresAt: saved.testExpiresAt,
     players,
     teams,
     status: saved.status || 'lobby',
@@ -396,8 +443,8 @@ async function loadGame(id) {
     wordCursor: saved.wordCursor || 0,
     teamActorCursor: saved.teamActorCursor || {},
     words: saved.words || [],
-    bannedPlayers: saved.bannedPlayers || [],
-    recentGuesses: saved.recentGuesses || [],
+    bannedPlayers: (saved.bannedPlayers || []).map(({ _id, ...entry }) => entry),
+    recentGuesses: (saved.recentGuesses || []).map(({ _id, ...entry }) => entry),
     lastRound: saved.lastRound?.reason ? saved.lastRound : null,
     roundHistory: saved.roundHistory || [],
     matchHistory: saved.matchHistory || [],
@@ -425,8 +472,8 @@ async function commitGame(game, { create = false } = {}) {
   if (dbConnected) {
     const previous = games.get(game.id);
     await gameService.saveGame(game, { create, previous });
-    if (!previous || game.closedAt || MATCH_LIST_FIELDS.some((field) => game[field] !== previous[field]) ||
-        Object.keys(game.players).length !== Object.keys(previous.players).length) {
+    if (!game.testOwner && (!previous || game.closedAt || MATCH_LIST_FIELDS.some((field) => game[field] !== previous[field]) ||
+        Object.keys(game.players).length !== Object.keys(previous.players).length)) {
       notifyMatchChanged();
     }
   }
@@ -850,12 +897,29 @@ function onRequest(socket, event, action, { identity = false, points = 1 } = {})
   });
 }
 
+async function testAdmin(data) {
+  const session = typeof data.testAdminToken === 'string'
+    ? await adminService.authenticate(data.testAdminToken)
+    : null;
+  if (!session) throw new RequestError('Sign in as an admin to use the test room.', 'TEST_AUTH_REQUIRED');
+  return session.admin.id;
+}
+
+async function authorizeRoom(game, data) {
+  if (game.testOwner) {
+    if (data.testRoom !== true || await testAdmin(data) !== game.testOwner) throw new RequestError('Game not found.');
+  } else if (data.testRoom) {
+    throw new RequestError('Open a room from the admin testing workspace.');
+  }
+}
+
 function onGameRequest(socket, event, action, { restore = false, ...options } = {}) {
   onRequest(socket, event, (payload, receivedAt) => {
     const gameId = normalizeGameId(payload.gameId);
     return queueGameAction(gameId, async () => {
       const game = (hosted || restore) ? await loadGame(gameId) : games.get(gameId);
-      if (!game) throw new RequestError('Game not found.');
+      if (!game || (game.testExpiresAt && Number(game.testExpiresAt) <= Date.now())) throw new RequestError('Game not found.');
+      await authorizeRoom(game, payload);
       return action(game, payload, receivedAt);
     });
   }, options);
@@ -865,11 +929,14 @@ io.on('connection', (socket) => {
   onRequest(socket, 'createGame', (data) => openSession(socket, async () => {
     verifySessionTarget(socket, null);
     const config = normalizeConfig(data);
+    const testOwner = data.testRoom === true ? await testAdmin(data) : undefined;
+    if (testOwner) config.visibility = 'private';
     const teamId = cleanTeamId(data.teamId || 'team1', config.teamCount);
     await freshDeck(config);
 
     const game = {
       ...config,
+      ...(testOwner ? { testOwner, testExpiresAt: new Date(Date.now() + TEST_ROOM_DURATION_MS) } : {}),
       id: null,
       hostId: null,
       hostName: 'Host',
@@ -946,6 +1013,7 @@ io.on('connection', (socket) => {
       const game = await loadGame(gameId);
       const player = game?.players[id];
       if (!canResume(player, data.sessionToken)) throw invalid();
+      await authorizeRoom(game, data);
       const boundPlayer = findPlayer(game, socket);
       if (boundPlayer && boundPlayer.id !== id) throw invalid();
 
@@ -1016,7 +1084,7 @@ io.on('connection', (socket) => {
     }
 
     const next = structuredClone(game);
-    applySettings(next, normalizeConfig({ ...game, ...settings }));
+    applySettings(next, normalizeConfig({ ...game, ...settings, ...(game.testOwner ? { visibility: 'private' } : {}) }));
     await freshDeck(next);
     resetMatch(next);
     await commitGame(next);

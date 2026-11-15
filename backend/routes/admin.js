@@ -1,3 +1,4 @@
+const siteSettings = require('../services/siteSettings');
 const express = require('express');
 const { RateLimiterMemory } = require('rate-limiter-flexible');
 const adminService = require('../services/adminService');
@@ -334,8 +335,23 @@ router.delete('/categories/:id', handle(async (req, res) => {
   res.json({ ok: true });
 }));
 
+router.get('/site-settings', handle(async (_req, res) => {
+  res.json(await siteSettings.getSettings());
+}));
+
+router.put('/site-settings', requireHeadAdmin, handle(async (req, res) => {
+  try {
+    res.json(await siteSettings.saveSettings(req.body));
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Choose a supported theme and difficulty, and keep the defaults within the listed ranges.' });
+    }
+    throw error;
+  }
+}));
+
 router.get('/matches', requireHeadAdmin, handle(async (req, res) => {
-  const games = await Game.find()
+  const games = await Game.find({ testOwner: { $exists: false } })
     .select('status visibility category difficulty currentRound players teamCount matchHistory.matchId closedAt createdAt updatedAt')
     .sort({ updatedAt: -1 })
     .limit(30)

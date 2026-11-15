@@ -4,11 +4,14 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useGameStore } from '../app/store';
 import Button from './ui/Button';
+import { reportTestSeat, testSeat } from '../lib/testSeat';
 
 export default function GameInitializer() {
   const initListeners = useGameStore((state) => state.initListeners);
   const resumeSession = useGameStore((state) => state.resumeSession);
   const fetchWordCatalog = useGameStore((state) => state.fetchWordCatalog);
+  const game = useGameStore((state) => state.game);
+  const reconnectTestSeat = useGameStore((state) => state.reconnectTestSeat);
   const status = useGameStore((state) => state.status);
   const gameId = useGameStore((state) => state.gameId);
   const connectionStatus = useGameStore((state) => state.connectionStatus);
@@ -16,7 +19,7 @@ export default function GameInitializer() {
   const router = useRouter();
   const pathname = usePathname();
   const roomPath = status === 'finished' ? '/results' : status === 'lobby' ? '/lobby' : '/game';
-  const playerPage = ['/create', '/join', '/lobby', '/game', '/results'].includes(pathname);
+  const playerPage = ['/create', '/join', '/lobby', '/game', '/results', '/admin/testing/player'].includes(pathname);
   const catalogPage = pathname === '/create' || pathname === '/lobby';
 
   useEffect(() => {
@@ -44,6 +47,32 @@ export default function GameInitializer() {
       router.replace(roomPath);
     }
   }, [gameId, pathname, playerPage, roomPath, router, sessionStatus]);
+
+  useEffect(() => {
+    if (!testSeat()) return;
+    const player = game?.players?.[game.selfId];
+    reportTestSeat({
+      gameId,
+      status,
+      teamId: player?.teamId,
+      isHost: game?.isHost,
+      connected: Boolean(gameId && sessionStatus === 'ready' && connectionStatus === 'online'),
+      teamSizes: game && Object.values(game.teams).map(({ id, name, players }) => ({
+        id, name, size: players.length
+      })),
+      capacity: game?.playersPerTeam
+    });
+  }, [game, gameId, status, sessionStatus, connectionStatus]);
+
+  useEffect(() => {
+    if (!testSeat() || !gameId) return;
+    const receive = (event) => {
+      if (event.source !== window.parent || event.origin !== window.location.origin) return;
+      if (event.data?.type === 'actguess:reconnect-test-seat') reconnectTestSeat();
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [gameId, reconnectTestSeat]);
 
   if (!playerPage || (connectionStatus === 'online' && sessionStatus === 'ready')) return null;
 

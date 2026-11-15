@@ -14,7 +14,12 @@ const nextConfig = {
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         { key: 'X-Content-Type-Options', value: 'nosniff' }
       ]
-    }];
+    }, ...['/admin/testing/player', '/lobby', '/game', '/results'].map((source) => ({
+      source,
+      headers: [
+        { key: 'Content-Security-Policy', value: "frame-ancestors 'self'; object-src 'none'; base-uri 'self'" }
+      ]
+    }))];
   }
 }
 

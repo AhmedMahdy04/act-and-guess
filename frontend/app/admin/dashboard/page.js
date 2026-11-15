@@ -6,15 +6,17 @@ import { useRouter } from 'next/navigation';
 import Button from '../../../components/ui/Button';
 import Card from '../../../components/ui/Card';
 import { adminApi, clearAdminToken, getAdminToken, subscribeToAdminChanges } from '../../../lib/adminApi';
+import GameSettingsPanel from './_components/GameSettingsPanel';
 import { CategoriesPanel, WordsPanel } from './_components/CatalogPanels';
 import { AccountsPanel, MatchesPanel } from './_components/OperationsPanels';
 import { DIFFICULTIES, Field, FormActions, inputClass, PanelStatus, useAdminData } from './_components/controls';
 
 const TABS = [
-  { id: 'words', label: 'Words' },
+  { id: 'words', label: 'Word library' },
   { id: 'categories', label: 'Categories' },
-  { id: 'matches', label: 'Matches', headOnly: true },
-  { id: 'admins', label: 'Accounts', headOnly: true }
+  { id: 'settings', label: 'Game settings', headOnly: true },
+  { id: 'matches', label: 'Game history', headOnly: true },
+  { id: 'admins', label: 'Admin accounts', headOnly: true }
 ];
 
 export default function AdminDashboard() {
@@ -153,6 +155,9 @@ export default function AdminDashboard() {
             <p className="mt-2 break-all text-sm text-slate-300">{admin.email} · {admin.isHeadAdmin ? 'Head admin' : 'Catalog admin'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link href="/admin/testing" className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+              Open game testing
+            </Link>
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => setPasswordForm({ currentPassword: '', password: '' })}>Change password</Button>
             <Button size="sm" variant="ghost" disabled={pending} onClick={logout}>Sign out</Button>
           </div>
@@ -219,11 +224,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {tab !== 'categories' && categoryRequest.error && <PanelStatus request={categoryRequest} onRetry={() => refresh('catalog')} />}
+      {['words', 'matches'].includes(tab) && categoryRequest.error && <PanelStatus request={categoryRequest} onRetry={() => refresh('catalog')} />}
 
       <Card className="p-4 sm:p-6">
         {tab === 'words' && <WordsPanel {...panelProps} categories={categories} revision={versions.catalog} initialCategory={initialCategory} />}
         {tab === 'categories' && <CategoriesPanel {...panelProps} categories={categories} request={categoryRequest} viewWords={viewWords} />}
+        {tab === 'settings' && admin.isHeadAdmin && <GameSettingsPanel {...panelProps} />}
         {tab === 'matches' && admin.isHeadAdmin && <MatchesPanel {...panelProps} categories={categories} revision={versions.matches} />}
         {tab === 'admins' && admin.isHeadAdmin && <AccountsPanel {...panelProps} revision={versions.admins} />}
       </Card>

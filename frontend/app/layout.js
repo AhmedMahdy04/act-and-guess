@@ -4,6 +4,7 @@ import PageTransitions from '../components/PageTransitions';
 import Logo from '../components/Logo';
 import Link from 'next/link';
 import CookieConsent from '../components/CookieConsent';
+import SiteAppearance from '../components/SiteAppearance';
 
 export const metadata = {
   title: 'Act & Guess — Multiplayer Party Game',
@@ -17,7 +18,7 @@ export default function RootLayout({ children }) {
         <a href="#content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-[60] focus:rounded-lg focus:bg-indigo-600 focus:px-4 focus:py-2 focus:text-white">
           Skip to content
         </a>
-        <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.04] bg-base-950/70 backdrop-blur-md">
+        <header data-site-header className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.04] bg-base-950/70 backdrop-blur-md">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
             <Link href="/" aria-label="Act & Guess home" className="shrink-0 hover:opacity-80 transition-opacity">
               <Logo size="sm" />
@@ -44,7 +45,8 @@ export default function RootLayout({ children }) {
           <PageTransitions>{children}</PageTransitions>
         </div>
 
-        <CookieConsent />
+        <SiteAppearance />
+        <div data-site-consent><CookieConsent /></div>
       </body>
     </html>
   )

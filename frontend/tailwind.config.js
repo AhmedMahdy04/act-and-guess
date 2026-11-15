@@ -9,12 +9,12 @@ module.exports = {
     extend: {
       colors: {
         base: {
-          950: '#0B0D17',
-          900: '#111320',
-          800: '#1A1D2E',
-          700: '#252A3D',
+          950: 'rgb(var(--base-950) / <alpha-value>)',
+          900: 'rgb(var(--base-900) / <alpha-value>)',
+          800: 'rgb(var(--base-800) / <alpha-value>)',
+          700: 'rgb(var(--base-700) / <alpha-value>)',
         },
-        primary: '#6366F1',
+        primary: 'rgb(var(--primary) / <alpha-value>)',
         accent: {
           emerald: '#10B981',
           amber: '#F59E0B',

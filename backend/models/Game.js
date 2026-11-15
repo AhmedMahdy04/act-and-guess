@@ -21,6 +21,8 @@ const teamSchema = new mongoose.Schema({
 }, { _id: false });
 
 const gameSchema = new mongoose.Schema({
+  testOwner: String,
+  testExpiresAt: Date,
   gameCode: { type: String, required: true, unique: true },
   revision: Number,
   hostId: String,
@@ -55,12 +57,14 @@ const gameSchema = new mongoose.Schema({
   closedAt: { type: Date, default: null },
   words: [String],
   bannedPlayers: [{
+    _id: false,
     playerId: String,
     username: String,
     reason: String,
     bannedAt: Date
   }],
   recentGuesses: [{
+    _id: false,
     id: String,
     guess: String,
     playerId: String,
@@ -105,5 +109,6 @@ const gameSchema = new mongoose.Schema({
 
 gameSchema.index({ visibility: 1, status: 1, closedAt: 1, updatedAt: -1 });
 gameSchema.index({ updatedAt: -1 });
+gameSchema.index({ testExpiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('Game', gameSchema);

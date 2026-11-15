@@ -84,5 +84,9 @@ export const adminApi = {
   createAdmin: (body) => fetchAdmin('/admins', { method: 'POST', body }),
   disableAdmin: (record) => fetchAdmin(recordPath('admins', record), { method: 'DELETE' }),
 
+  closeTestRoom: (id) => fetchAdmin('/test-rooms/' + encodeURIComponent(id), { method: 'DELETE' }),
+  getSiteSettings: (signal) => fetchAdmin('/site-settings', { signal }),
+  saveSiteSettings: (body) => fetchAdmin('/site-settings', { method: 'PUT', body }),
+
   listMatches: (signal) => fetchAdmin('/matches', { signal })
 };

@@ -1,10 +1,16 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
+import { testSeat } from '../lib/testSeat';
 import { usePathname } from 'next/navigation';
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 
+const subscribe = () => () => {};
+
 export default function PageTransitions({ children }) {
   const pathname = usePathname();
+  const embedded = useSyncExternalStore(subscribe, testSeat, () => null);
+  if (embedded) return children;
 
   return (
     <MotionConfig reducedMotion="user">

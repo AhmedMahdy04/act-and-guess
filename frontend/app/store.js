@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
+import { testSeat } from '../lib/testSeat';
 
 const PLAYER_ID_KEY = 'guess_game_player_id';
 const GAME_ID_KEY = 'guess_game_game_id';
@@ -19,6 +20,15 @@ export function normalizeRoomCode(value) {
 function emitWithAck(event, payload, timeout = 8000) {
   if (!socket.connected) {
     return Promise.reject(new Error('The game server is reconnecting. Try again in a moment.'));
+  }
+
+  const seat = testSeat();
+  if (seat) {
+    payload = {
+      ...payload,
+      testRoom: true,
+      testAdminToken: sessionStorage.getItem('admin_token')
+    };
   }
 
   return new Promise((resolve, reject) => {
@@ -50,6 +60,8 @@ async function fetchApi(path) {
 
 function readStoredValue(key) {
   if (typeof window === 'undefined') return null;
+  const seat = testSeat();
+  if (seat) key = `${seat}:${key}`;
   if (memoryStorage.has(key)) return memoryStorage.get(key);
   try {
     return window.sessionStorage.getItem(key);
@@ -61,6 +73,8 @@ function readStoredValue(key) {
 function writeStoredValue(key, value) {
   if (typeof window === 'undefined') return;
 
+  const seat = testSeat();
+  if (seat) key = `${seat}:${key}`;
   memoryStorage.set(key, value || null);
 
   try {
@@ -258,6 +272,12 @@ export const useGameStore = create((set, get) => {
       await command('endGameConfirm', { gameId });
       clearStoredSession();
       set(emptyGame);
+    },
+
+    reconnectTestSeat: () => {
+      if (!testSeat()) return;
+      socket.disconnect();
+      socket.connect();
     },
 
     clearError: () => set({ lastError: null }),

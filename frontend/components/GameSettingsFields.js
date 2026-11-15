@@ -28,7 +28,7 @@ export function getSettingsProblem(settings, catalog) {
   return '';
 }
 
-export default function GameSettingsFields({ settings, onChange, catalog, catalogStatus }) {
+export default function GameSettingsFields({ settings, onChange, catalog, catalogStatus, privateOnly = false }) {
   const categoryOptions = catalog?.categoryOptions || ['random'];
   const categoryDetails = catalog?.categoryDetails || [];
   const selectedCategory = categoryDetails.find(({ slug }) => slug === settings.category);
@@ -55,13 +55,13 @@ export default function GameSettingsFields({ settings, onChange, catalog, catalo
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <label className="flex flex-col gap-1.5">
+        {!privateOnly && <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold text-slate-300">Room visibility</span>
           <select value={settings.visibility} onChange={(event) => onChange('visibility', event.target.value)} className={inputClass}>
             <option value="private">Private · invite only</option>
             <option value="public">Public · listed on home</option>
           </select>
-        </label>
+        </label>}
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold text-slate-300">Category</span>
           <select value={settings.category} onChange={(event) => onChange('category', event.target.value)} className={inputClass}>

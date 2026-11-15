@@ -8,18 +8,12 @@ import Button from '../../components/ui/Button';
 import GameSettingsFields, { getSettingsProblem } from '../../components/GameSettingsFields';
 import RoomUnavailable from '../../components/RoomUnavailable';
 
-const initialSettings = {
-  teamCount: 2,
-  playersPerTeam: 3,
-  targetScore: 10,
-  roundTime: 30,
-  visibility: 'private',
-  category: 'random',
-  difficulty: 'mixed'
-};
+import { defaultRoomSettings, useSiteSettings } from '../../lib/siteSettings';
 
 export default function CreateGame() {
-  const [settings, setSettings] = useState(initialSettings);
+  const published = useSiteSettings();
+  const [overrides, setOverrides] = useState({});
+  const settings = { ...defaultRoomSettings, ...published, ...overrides };
   const [hostName, setHostName] = useState('');
   const [hostTeamId, setHostTeamId] = useState('team1');
   const [creating, setCreating] = useState(false);
@@ -86,7 +80,7 @@ export default function CreateGame() {
 
             <GameSettingsFields
               settings={settings}
-              onChange={(key, value) => setSettings((current) => ({ ...current, [key]: value }))}
+              onChange={(key, value) => setOverrides((current) => ({ ...current, [key]: value }))}
               catalog={wordCatalog}
               catalogStatus={catalogStatus}
             />
