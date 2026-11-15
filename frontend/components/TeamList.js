@@ -9,7 +9,7 @@ const teamColors = {
   team6: 'border-pink-500/20 bg-pink-500/5',
 };
 
-export default function TeamList({ teams, players, maxPlayersPerTeam }) {
+export default function TeamList({ teams, players, maxPlayersPerTeam, renderPlayerAction }) {
   return (
     <div className="space-y-4">
       {Object.entries(teams).map(([teamId, team]) => {
@@ -29,7 +29,10 @@ export default function TeamList({ teams, players, maxPlayersPerTeam }) {
             {team.players.length ? (
               <ul className="grid grid-cols-2 gap-2 min-[375px]:grid-cols-3 sm:grid-cols-4">
                 {team.players.map((playerId) => players[playerId] && (
-                  <li key={playerId}><PlayerAvatar player={players[playerId]} /></li>
+                  <li key={playerId} className="min-w-0">
+                    <PlayerAvatar player={players[playerId]} />
+                    {renderPlayerAction?.(players[playerId])}
+                  </li>
                 ))}
               </ul>
             ) : <p className="text-sm text-slate-300">This team has open spots.</p>}

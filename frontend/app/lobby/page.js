@@ -113,7 +113,20 @@ export default function Lobby() {
             )}
           </Card>
 
-          <TeamList teams={teams} players={players} maxPlayersPerTeam={game.playersPerTeam} />
+          <TeamList
+            teams={teams}
+            players={players}
+            maxPlayersPerTeam={game.playersPerTeam}
+            renderPlayerAction={isHost && inLobby ? (player) => (
+              <TeamMoveSelect
+                player={player}
+                teams={teams}
+                maxPlayers={game.playersPerTeam}
+                disabled={!canAct}
+                onMove={(id) => act('move', () => movePlayer(gameId, player.id, id), `${player.username} moved to ${teams[id].name}.`)}
+              />
+            ) : undefined}
+          />
 
           {isHost && inLobby && (
             <Card className="space-y-3 p-5 sm:p-6">
@@ -125,7 +138,6 @@ export default function Lobby() {
                     <p className="mt-1 text-xs text-slate-300">{teams[player.teamId]?.name} · {player.connected ? 'Connected' : 'Reconnecting'}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <TeamMoveSelect player={player} teams={teams} maxPlayers={game.playersPerTeam} disabled={!canAct} onMove={(id) => act('move', () => movePlayer(gameId, player.id, id), `${player.username} moved to ${teams[id].name}.`)} />
                     {!player.isHost && (
                       <>
                         <Button variant="ghost" size="sm" disabled={!canAct || !player.connected} onClick={() => {
@@ -232,19 +244,23 @@ function InviteCard({ gameId, joinLink }) {
 }
 
 function TeamMoveSelect({ player, teams, maxPlayers, disabled, onMove }) {
-  const available = Object.values(teams).filter((team) => team.id !== player.teamId && team.players.length < maxPlayers);
-  if (!available.length) return null;
+  const destinations = Object.values(teams).filter((team) => team.id !== player.teamId);
+  const hasSpace = destinations.some((team) => team.players.length < maxPlayers);
 
   return (
     <select
       value=""
       onChange={(event) => { if (event.target.value) onMove(event.target.value); }}
       aria-label={`Move ${player.username} to another team`}
-      disabled={disabled}
-      className="rounded-lg border border-white/10 bg-base-800 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+      disabled={disabled || !hasSpace}
+      className="mt-2 w-full rounded-lg border border-white/10 bg-base-800 px-2 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
     >
-      <option value="">Move to…</option>
-      {available.map((team) => <option key={team.id} value={team.id}>{team.name} ({team.players.length}/{maxPlayers})</option>)}
+      <option value="">{hasSpace ? 'Move to…' : 'Other teams full'}</option>
+      {destinations.map((team) => (
+        <option key={team.id} value={team.id} disabled={team.players.length >= maxPlayers}>
+          {team.name} ({team.players.length}/{maxPlayers})
+        </option>
+      ))}
     </select>
   );
 }
