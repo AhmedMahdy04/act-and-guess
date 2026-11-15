@@ -5,6 +5,8 @@ const playerSchema = new mongoose.Schema({
   username: { type: String, required: true },
   teamId: { type: String, required: true },
   sessionHash: String,
+  socketId: String,
+  lastSeen: Number,
   isHost: Boolean,
   isActor: Boolean,
   connected: Boolean,
@@ -20,6 +22,7 @@ const teamSchema = new mongoose.Schema({
 
 const gameSchema = new mongoose.Schema({
   gameCode: { type: String, required: true, unique: true },
+  revision: Number,
   hostId: String,
   hostName: String,
   status: { type: String, enum: ['lobby', 'playing', 'round_end', 'finished'], default: 'lobby' },

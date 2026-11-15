@@ -7,7 +7,7 @@ const PLAYER_ID_KEY = 'guess_game_player_id';
 const GAME_ID_KEY = 'guess_game_game_id';
 const SESSION_TOKEN_KEY = 'guess_game_session_token';
 const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4001').replace(/\/$/, '');
-const socket = io(BACKEND_URL, { autoConnect: false });
+const socket = io(BACKEND_URL, { autoConnect: false, transports: ['websocket'] });
 const memoryStorage = new Map();
 
 export const ROOM_CODE_LENGTH = 6;

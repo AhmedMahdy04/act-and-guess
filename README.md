@@ -38,11 +38,13 @@ Admins can search, add, edit, archive, and restore prompts and categories. Mongo
 
 ## Prepare a production deployment
 
-1. Set up a production MongoDB database and take a backup before upgrading an existing installation. Use a dedicated database account with access to this database.
-2. Deploy the backend with the `backend` root, Node.js 24, `npm start`, and the `/health` health check. Run a single backend replica because live Socket.IO rooms and timers are held in that process. In Railway, select Railpack and configure the start command and health check in the service settings. Existing services using `deployment/railway.json` can migrate those settings before Railway retires that format. [Railway monorepo configuration](https://docs.railway.com/deployments/monorepo), [Railway configuration migration](https://docs.railway.com/config-as-code)
-3. Set backend environment variables `NODE_ENV=production`, `MONGODB_URI`, and `FRONTEND_URL` to the exact HTTPS origin of the frontend. Use `FRONTEND_URLS` for additional comma-separated origins. Set `TRUST_PROXY_HOPS` only when the deployment has a known number of reverse-proxy hops. The hosting platform can supply `PORT`.
-4. Deploy the Next.js app with the `frontend` root and Node.js 24. Set `NEXT_PUBLIC_BACKEND_URL` to the backend's public HTTPS URL before building. [Vercel project root](https://vercel.com/docs/monorepos), [Vercel environment variables](https://vercel.com/docs/environment-variables)
-5. Confirm that `/health` returns `ok: true` and `dbConnected: true`. Test creating and joining a room from separate browsers, playing a round, reconnecting, and editing a test prompt from the dashboard. Verify the edit is visible to a connected host and persists through a restart.
+1. Use the existing MongoDB Atlas database or provision a dedicated database. Back up an existing installation before its first upgrade.
+2. Create a Vercel project for the `backend` directory. Use Node.js 24 and keep Fluid compute enabled. Set the production variables `MONGODB_URI` and `FRONTEND_URL` to the Atlas connection string and the exact public frontend origin. Use `FRONTEND_URLS` for additional exact origins. The backend's `/health` should report `ok: true` and `dbConnected: true`.
+3. Deploy the frontend from `frontend`. Set its production `NEXT_PUBLIC_BACKEND_URL` to the Vercel backend URL before building.
+4. Test a private four-player match through a connection recycle. Vercel Hobby WebSockets have a five-minute limit. Players reconnect automatically using their room session tokens. MongoDB holds the score, round deadline, and presence state for the next function instance. Connected clients drive round progression.
+5. Set the head admin bootstrap variables when ready to provision or migrate the dashboard. See the admin setup above.
+
+The Vercel backend uses the WebSocket transport directly and checks MongoDB for changes while players are in a room. Leave room pages when finished to reduce database traffic. The admin dashboard also refreshes periodically if a change occurred on another instance. [Vercel WebSockets](https://vercel.com/docs/functions/websockets)
 
 ## Local checks
 

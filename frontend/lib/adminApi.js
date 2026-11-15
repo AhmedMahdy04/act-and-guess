@@ -49,7 +49,7 @@ function recordPath(collection, record) {
 }
 
 export function subscribeToAdminChanges(onStatus, onChange) {
-  const socket = io(API_BASE + '/admin', { autoConnect: false, auth: { token: getAdminToken() } });
+  const socket = io(API_BASE + '/admin', { autoConnect: false, transports: ['websocket'], auth: { token: getAdminToken() } });
   socket.on('connect', () => {
     onStatus(true);
     onChange();

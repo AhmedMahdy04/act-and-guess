@@ -13,6 +13,10 @@ const adminService = require('./services/adminService');
 const { registerAdminEvents, notifyMatchChanged } = require('./services/adminEvents');
 const adminRoutes = require('./routes/admin');
 
+const hosted = Boolean(process.env.VERCEL);
+const PRESENCE_INTERVAL_MS = 12000;
+const PRESENCE_TIMEOUT_MS = 45000;
+const SYNC_INTERVAL_MS = 1200;
 const DISCONNECT_GRACE_MS = 20000;
 const ROUND_BREAK_MS = 2500;
 const ROUND_HISTORY_LIMIT = 500;
@@ -48,6 +52,7 @@ const corsOptions = { origin: (origin, callback) => callback(null, isAllowedOrig
 const io = new Server(server, {
   cors: corsOptions,
   allowRequest: (request, callback) => callback(null, isAllowedOrigin(request.headers.origin)),
+  ...(hosted ? { transports: ['websocket'] } : {}),
   maxHttpBufferSize: 16 * 1024
 });
 
@@ -198,6 +203,7 @@ function addPlayer(game, { playerId, username, teamId }, socket, isHost = false)
     username,
     teamId,
     socketId: socket.id,
+    lastSeen: Date.now(),
     sessionHash: hashToken(sessionToken),
     isHost,
     isActor: false,
@@ -307,7 +313,7 @@ function serializePublicGame(game, categoryLabels) {
 
 async function listPublicGames() {
   const persisted = dbConnected ? await gameService.listPublicGames() : [];
-  const live = [...games.values()].filter((game) => game.visibility === 'public' && game.status === 'lobby');
+  const live = (hosted ? [] : [...games.values()]).filter((game) => game.visibility === 'public' && game.status === 'lobby');
   const publicGames = [...live, ...persisted.filter((game) => !games.has(game.gameCode))];
   const categoryLabels = await wordService.getCategoryLabels(publicGames.map((game) => game.category || 'random'));
   return publicGames
@@ -328,7 +334,7 @@ function queueGameAction(gameId, action) {
 }
 
 async function loadGame(id) {
-  if (games.has(id)) return games.get(id);
+  if (!hosted && games.has(id)) return games.get(id);
   if (!dbConnected) return null;
 
   const saved = await gameService.getGameByCode(id);
@@ -354,12 +360,13 @@ async function loadGame(id) {
       id,
       teamId,
       username: cleanName(player.username) || 'Player',
-      socketId: null,
+      socketId: hosted ? player.socketId : null,
+      lastSeen: player.lastSeen,
       sessionHash: player.sessionHash || null,
       isHost: id === saved.hostId,
       isActor: saved.status === 'playing' && id === saved.currentActorId,
-      connected: false,
-      disconnectedAt: now
+      connected: hosted && Boolean(player.connected),
+      disconnectedAt: hosted ? player.disconnectedAt : now
     };
     teams[teamId].players.push(id);
   }
@@ -368,6 +375,7 @@ async function loadGame(id) {
   const game = {
     ...config,
     id,
+    revision: saved.revision,
     players,
     teams,
     status: saved.status || 'lobby',
@@ -394,9 +402,10 @@ async function loadGame(id) {
     roundHistory: saved.roundHistory || [],
     matchHistory: saved.matchHistory || [],
     closedAt: null,
-    recoveryUntil: recovering ? now + DISCONNECT_GRACE_MS : null
+    recoveryUntil: recovering && !hosted ? now + DISCONNECT_GRACE_MS : null
   };
 
+  if (hosted) return game;
   games.set(id, game);
   for (const player of Object.values(players)) scheduleDisconnect(game.id, player);
   scheduleRound(game);
@@ -425,7 +434,7 @@ async function commitGame(game, { create = false } = {}) {
   if (game.closedAt) {
     games.delete(game.id);
   } else {
-    games.set(game.id, game);
+    if (!hosted) games.set(game.id, game);
     emitGameState(game);
   }
   scheduleRound(game);
@@ -597,7 +606,7 @@ function readyToRecover(game) {
 function scheduleRound(game, minDelay = 0) {
   clearTimeout(roundTimers.get(game.id));
   roundTimers.delete(game.id);
-  if (shuttingDown || game.closedAt || (game.status !== 'playing' && game.status !== 'round_end')) return;
+  if (hosted || shuttingDown || game.closedAt || (game.status !== 'playing' && game.status !== 'round_end')) return;
 
   const now = Date.now();
   let delay;
@@ -704,7 +713,7 @@ function clearDisconnect(gameId, playerId) {
 
 function scheduleDisconnect(gameId, player, minDelay = 0) {
   clearDisconnect(gameId, player.id);
-  if (shuttingDown) return;
+  if (hosted || shuttingDown) return;
   const key = disconnectKey(gameId, player.id);
   const timer = setTimeout(() => {
     if (disconnectTimers.get(key) !== timer) return;
@@ -784,7 +793,7 @@ function disconnectPlayer(socket) {
   if (!gameId || shuttingDown) return;
 
   queueGameAction(gameId, async () => {
-    const game = games.get(gameId);
+    const game = hosted ? await loadGame(gameId) : games.get(gameId);
     const player = game && findPlayer(game, socket);
     if (!player) return;
 
@@ -794,7 +803,7 @@ function disconnectPlayer(socket) {
     scheduleDisconnect(gameId, next.players[player.id]);
   }).catch((err) => {
     console.error('Could not record disconnect:', err.message);
-    setTimeout(() => disconnectPlayer(socket), 1000).unref();
+    if (!hosted) setTimeout(() => disconnectPlayer(socket), 1000).unref();
   });
 }
 
@@ -822,9 +831,16 @@ function onRequest(socket, event, action, { identity = false, points = 1 } = {})
     }
 
     try {
-      reply(await action(payload, receivedAt));
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          reply(await action(payload, receivedAt));
+          break;
+        } catch (err) {
+          if (!hosted || err.code !== 'GAME_CONFLICT' || attempt >= 4) throw err;
+        }
+      }
     } catch (err) {
-      if (err instanceof RequestError) {
+      if (err instanceof RequestError || err.code === 'GAME_CONFLICT') {
         reply({ error: err.message, code: err.code });
         return;
       }
@@ -838,7 +854,7 @@ function onGameRequest(socket, event, action, { restore = false, ...options } = 
   onRequest(socket, event, (payload, receivedAt) => {
     const gameId = normalizeGameId(payload.gameId);
     return queueGameAction(gameId, async () => {
-      const game = restore ? await loadGame(gameId) : games.get(gameId);
+      const game = (hosted || restore) ? await loadGame(gameId) : games.get(gameId);
       if (!game) throw new RequestError('Game not found.');
       return action(game, payload, receivedAt);
     });
@@ -935,7 +951,7 @@ io.on('connection', (socket) => {
 
       const previousSocketId = player.socketId;
       const next = structuredClone(game);
-      Object.assign(next.players[id], { connected: true, socketId: socket.id, disconnectedAt: null });
+      Object.assign(next.players[id], { connected: true, socketId: socket.id, lastSeen: Date.now(), disconnectedAt: null });
       if (next.recoveryUntil && readyToRecover(next)) next.recoveryUntil = null;
       await commitGame(next);
       clearDisconnect(gameId, id);
@@ -1096,21 +1112,79 @@ io.on('connection', (socket) => {
     return { ok: true, score };
   });
 
+  if (hosted) {
+    const interval = setInterval(() => syncSocket(socket), SYNC_INTERVAL_MS);
+    socket.once('disconnect', () => clearInterval(interval));
+  }
   socket.on('disconnect', () => disconnectPlayer(socket));
 });
+
+async function syncSocket(socket) {
+  const gameId = socket.data.gameId;
+  if (!gameId || socket.data.syncing) return;
+  socket.data.syncing = true;
+  try {
+    await queueGameAction(gameId, async () => {
+      if (!socket.connected || socket.data.gameId !== gameId) return;
+      const game = await loadGame(gameId);
+      if (!socket.connected || socket.data.gameId !== gameId) return;
+      const player = game && findPlayer(game, socket);
+      if (!player) {
+        releaseSession(socket.id, gameId, game ? 'removed' : 'closed');
+        return;
+      }
+
+      const now = Date.now();
+      const next = structuredClone(game);
+      let changed = false;
+      if (now - (player.lastSeen || 0) >= PRESENCE_INTERVAL_MS) {
+        next.players[player.id].lastSeen = now;
+        changed = true;
+      }
+      for (const entry of Object.values(next.players)) {
+        if (entry.id === player.id) continue;
+        const expired = entry.connected
+          ? now - (entry.lastSeen || 0) > PRESENCE_TIMEOUT_MS
+          : now - (entry.disconnectedAt || 0) > DISCONNECT_GRACE_MS;
+        if (expired) {
+          removePlayer(next, entry.id, 'player_left');
+          changed = true;
+        }
+      }
+
+      if (next.status === 'playing' && next.roundEndsAt <= now) {
+        endRound(next, 'timeout');
+        changed = true;
+      } else if (next.status === 'round_end' && next.nextRoundAt <= now) {
+        const message = await advanceRound(next);
+        if (message) emitToHost(next, 'gameError', { message });
+        changed = true;
+      }
+
+      if (changed) await commitGame(next);
+      else socket.emit('gameState', serializeGame(game, player.id));
+    });
+  } catch (err) {
+    if (err.code !== 'GAME_CONFLICT') console.error('Could not sync game:', err.name);
+  } finally {
+    delete socket.data.syncing;
+  }
+}
+
+async function initialize() {
+  dbConnected = await connectDB();
+  if (!dbConnected && requireDatabase) throw new Error('MongoDB is required for this environment.');
+  if (!dbConnected) return;
+  await gameService.init();
+  await wordService.ensureCatalogSeeded();
+  await adminService.seedHeadAdmin();
+}
 
 async function start() {
   const port = Number(process.env.PORT || process.env.BACKEND_PORT || 4001);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('The game server port is invalid.');
 
-  dbConnected = await connectDB();
-  if (!dbConnected && requireDatabase) throw new Error('MongoDB is required for this environment.');
-
-  if (dbConnected) {
-    await gameService.init();
-    await wordService.ensureCatalogSeeded();
-    await adminService.seedHeadAdmin();
-  }
+  await initialize();
 
   server.listen(port, () => {
     console.log(`Game server listening on port ${port}`);
@@ -1129,10 +1203,13 @@ function shutdown() {
   });
 }
 
-process.once('SIGTERM', shutdown);
-process.once('SIGINT', shutdown);
-
-start().catch((err) => {
-  console.error('Game server could not start:', err.message);
-  process.exit(1);
-});
+if (hosted) {
+  module.exports = { server, initialize };
+} else {
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  start().catch((err) => {
+    console.error('Game server could not start:', err.message);
+    process.exit(1);
+  });
+}

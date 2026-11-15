@@ -24,7 +24,7 @@ async function getGameByCode(gameCode) {
 }
 
 async function saveGame(game, { create = false, previous } = {}) {
-  const { id, players, teams, recoveryUntil, ...state } = game;
+  const { id, players, teams, recoveryUntil, revision, ...state } = game;
   const runtimePlayers = Object.values(players).map(({ id: playerId, ...player }) => ({ playerId, ...player }));
   const runtimeTeams = Object.values(teams).map(({ id: teamId, ...team }) => ({ teamId, ...team }));
   const data = {
@@ -37,6 +37,7 @@ async function saveGame(game, { create = false, previous } = {}) {
   };
 
   if (create) {
+    if (process.env.VERCEL) data.revision = game.revision = 1;
     await Game.create({ gameCode: id, ...data });
     return;
   }
@@ -44,10 +45,16 @@ async function saveGame(game, { create = false, previous } = {}) {
   if (previous?.roundHistory.at(-1)?.roundId === game.roundHistory.at(-1)?.roundId) delete data.roundHistory;
   if (previous?.matchHistory.at(-1)?.matchId === game.matchHistory.at(-1)?.matchId) delete data.matchHistory;
 
-  const result = await Game.updateOne({ gameCode: id, closedAt: null }, { $set: data }, { runValidators: true });
-  if (result.matchedCount !== 1) {
-    throw new Error('The game snapshot no longer exists.');
+  const filter = { gameCode: id, closedAt: null };
+  if (process.env.VERCEL) {
+    filter.revision = revision ?? { $exists: false };
+    data.revision = (revision ?? 0) + 1;
   }
+  const result = await Game.updateOne(filter, { $set: data }, { runValidators: true });
+  if (result.matchedCount !== 1) {
+    throw Object.assign(new Error('The game changed. Try again.'), { code: 'GAME_CONFLICT' });
+  }
+  game.revision = data.revision;
 }
 
 async function listPublicGames() {
