@@ -62,6 +62,10 @@ export default function Lobby() {
     }
   }
 
+  function moveLobbyPlayer(player, teamId) {
+    return act('move', () => movePlayer(gameId, player.id, teamId), `${player.username} moved to ${teams[teamId].name}.`);
+  }
+
   return (
     <main className="mx-auto min-h-[calc(100dvh-4rem)] max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -117,13 +121,14 @@ export default function Lobby() {
             teams={teams}
             players={players}
             maxPlayersPerTeam={game.playersPerTeam}
+            onMovePlayer={isHost && inLobby && canAct ? moveLobbyPlayer : undefined}
             renderPlayerAction={isHost && inLobby ? (player) => (
               <TeamMoveSelect
                 player={player}
                 teams={teams}
                 maxPlayers={game.playersPerTeam}
                 disabled={!canAct}
-                onMove={(id) => act('move', () => movePlayer(gameId, player.id, id), `${player.username} moved to ${teams[id].name}.`)}
+                onMove={(id) => moveLobbyPlayer(player, id)}
               />
             ) : undefined}
           />
